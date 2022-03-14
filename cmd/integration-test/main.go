@@ -38,14 +38,14 @@ func send(c *client.Client) (sum int64, err error) {
 		sum += int64(i)
 		fmt.Fprintf(&b, "%d\n", i)
 
-		if b.Len() >= maxBufferSize {
-			if err := c.Send(b.Bytes()); err != nil {
-				return 0, err
-			}
-			b.Reset()
-		}
+		// if b.Len() >= maxBufferSize {
+		// 	if err := c.Send(b.Bytes()); err != nil {
+		// 		return 0, err
+		// 	}
+		// 	b.Reset()
+		// }
 	}
-	log.Printf("%d", b.Len())
+	// log.Printf("%d", b.Len())
 	if b.Len() > 0 {
 		if err := c.Send(b.Bytes()); err != nil {
 			return 0, err
@@ -64,6 +64,7 @@ func recv(c *client.Client) (sum int64, err error) {
 		} else if err != nil {
 			return 0, err
 		}
+
 		ints := strings.Split(string(res), "\n")
 		for _, ish := range ints {
 			if ish == "" {
