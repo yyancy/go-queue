@@ -30,6 +30,9 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	curbuf := buf
 	curLen := 0
 	if c.resbuf.Len() > 0 {
+		if c.resbuf.Len() > len(curbuf) {
+			return nil, errors.New("The buffer is too small to fit the message")
+		}
 		n, err := c.resbuf.Read(curbuf)
 		curLen = n
 		if err != nil {
@@ -39,10 +42,11 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 		curbuf = buf[n:]
 	}
 	n, err := c.buf.Read(curbuf)
-	curLen += n
 	if err != nil {
 		return nil, err
 	}
+
+	curLen += n
 	res := buf[0:curLen]
 
 	truncated, rest, err := cutLast(res)
@@ -67,12 +71,5 @@ func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
 	if lastI == -1 {
 		return nil, nil, errors.New("too small buffer")
 	}
-
-	// log.Printf("lastI: %d, unread: %d", lastI, n-lastI+1)
-	// // 123
-	// for i := 0; i < n-lastI+1; i++ {
-	// 	c.buf.UnreadByte()
-	// }
-
 	return buf[:lastI+1], buf[lastI+1:], nil
 }
