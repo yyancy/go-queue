@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yyancy/go-queue/client"
+	"github.com/yyancy/go-queue/server"
 )
 
 const maxN = 10000000
 const maxBufferSize = 1024 * 1024
 
 func main() {
-	c, _ := client.NewClient([]string{"yancy"})
+	c, _ := server.NewServer()
 	want, err := send(c)
 	if err != nil {
 		log.Fatalf("Send error: %v", err)
@@ -31,7 +31,7 @@ func main() {
 	log.Printf("The test passed")
 }
 
-func send(c *client.Client) (sum int64, err error) {
+func send(c *server.Server) (sum int64, err error) {
 	var b bytes.Buffer
 
 	for i := 0; i < maxN; i++ {
@@ -54,7 +54,7 @@ func send(c *client.Client) (sum int64, err error) {
 	return sum, nil
 
 }
-func recv(c *client.Client) (sum int64, err error) {
+func recv(c *server.Server) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)
 	sum = 0
 	for {
