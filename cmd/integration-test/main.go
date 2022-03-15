@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/yyancy/go-queue/server"
+	"github.com/yyancy/go-queue/client"
 )
 
 const maxN = 10000000
 const maxBufferSize = 1024 * 1024
 
 func main() {
-	c, _ := server.NewServer()
+	c, _ := client.NewClient([]string{"localhost:8080"})
 	want, err := send(c)
 	if err != nil {
 		log.Fatalf("Send error: %v", err)
@@ -31,19 +31,19 @@ func main() {
 	log.Printf("The test passed")
 }
 
-func send(c *server.Server) (sum int64, err error) {
+func send(c *client.Client) (sum int64, err error) {
 	var b bytes.Buffer
 
 	for i := 0; i < maxN; i++ {
 		sum += int64(i)
 		fmt.Fprintf(&b, "%d\n", i)
 
-		// if b.Len() >= maxBufferSize {
-		// 	if err := c.Send(b.Bytes()); err != nil {
-		// 		return 0, err
-		// 	}
-		// 	b.Reset()
-		// }
+		if b.Len() >= maxBufferSize {
+			if err := c.Send(b.Bytes()); err != nil {
+				return 0, err
+			}
+			b.Reset()
+		}
 	}
 	// log.Printf("%d", b.Len())
 	if b.Len() > 0 {
@@ -54,7 +54,7 @@ func send(c *server.Server) (sum int64, err error) {
 	return sum, nil
 
 }
-func recv(c *server.Server) (sum int64, err error) {
+func recv(c *client.Client) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)
 	sum = 0
 	for {

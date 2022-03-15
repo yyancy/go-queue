@@ -17,6 +17,9 @@ func NewServer() (*Server, error) {
 }
 
 func (c *Server) Send(msg []byte) error {
+	if len(msg) == 0 {
+		return errors.New("no content to send")
+	}
 	_, err := c.buf.Write(msg)
 	return err
 }

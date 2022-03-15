@@ -1,6 +1,7 @@
 package web
 
 import (
+	"io"
 	"log"
 	"net/http"
 
@@ -19,15 +20,20 @@ func NewWeb(addrs []string) (w *Web, err error) {
 	return &Web{addrs: addrs}, nil
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
-
-	ctx.SetStatusCode(http.StatusOK)
-	ctx.WriteString("internal server error: " + err.Error())
+	if err != io.EOF {
+		ctx.SetStatusCode(http.StatusInternalServerError)
+		ctx.WriteString("internal server error: " + err.Error())
+	}
 }
 func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {
 	buf := make([]byte, defaultBufferSize)
 	res, err := w.server.Recv(buf)
 	if err != nil {
 		w.errorHandler(err, ctx)
+	}
+	if len(res) == 0 {
+		ctx.SetConnectionClose()
+		return
 	}
 	log.Printf("read(): got %q", string(res))
 	ctx.WriteString(string(res))

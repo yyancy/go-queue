@@ -3,62 +3,70 @@ package client
 import (
 	"bytes"
 	"errors"
+	"io"
+	"log"
+
+	"github.com/valyala/fasthttp"
 )
 
 const defaultBufferSize = 64 * 1024
 
 type Client struct {
-	addrs []string
-
+	addrs  []string
+	c      *fasthttp.Client
 	buf    bytes.Buffer
 	resbuf bytes.Buffer
 }
 
 func NewClient(addrs []string) (*Client, error) {
-	return &Client{addrs: addrs}, nil
+	return &Client{addrs: addrs,
+		c: &fasthttp.Client{}}, nil
 }
 
 func (c *Client) Send(msg []byte) error {
-	_, err := c.buf.Write(msg)
-	return err
+	if len(msg) == 0 {
+		return errors.New("no content to send")
+	}
+	// _, err := c.buf.Write(msg)
+	req := fasthttp.AcquireRequest()
+	req.SetRequestURI("http://localhost:8080/write")
+	req.Header.SetMethod(fasthttp.MethodGet)
+	req.SetBody(msg)
+	resp := fasthttp.AcquireResponse()
+	err := c.c.Do(req, resp)
+	fasthttp.ReleaseRequest(req)
+	if err != nil {
+		fasthttp.ReleaseResponse(resp)
+		log.Fatalf("ERR Connection error: %s\n", err)
+	}
+	// log.Printf("Send Response: %s\n", resp.Body())
+	fasthttp.ReleaseResponse(resp)
+	return nil
 }
 
 func (c *Client) Recv(buf []byte) ([]byte, error) {
 	if buf == nil {
 		buf = make([]byte, defaultBufferSize)
 	}
-	curbuf := buf
-	curLen := 0
-	if c.resbuf.Len() > 0 {
-		if c.resbuf.Len() > len(curbuf) {
-			return nil, errors.New("The buffer is too small to fit the message")
-		}
-		n, err := c.resbuf.Read(curbuf)
-		curLen = n
-		if err != nil {
-			return nil, err
-		}
-		c.resbuf.Reset()
-		curbuf = buf[n:]
-	}
-	n, err := c.buf.Read(curbuf)
+	req := fasthttp.AcquireRequest()
+	req.SetRequestURI("http://localhost:8080/read")
+	req.Header.SetMethod(fasthttp.MethodGet)
+	resp := fasthttp.AcquireResponse()
+	err := c.c.Do(req, resp)
+	fasthttp.ReleaseRequest(req)
+
 	if err != nil {
-		return nil, err
+		fasthttp.ReleaseResponse(resp)
+		log.Fatalf("ERR Connection error: %s\n", err)
 	}
-
-	curLen += n
-	res := buf[0:curLen]
-
-	truncated, rest, err := cutLast(res)
-	if len(rest) > 0 {
-		_, err := c.resbuf.Write(rest)
-		if err != nil {
-			return nil, err
-		}
+	b := resp.Body()
+	if len(b) == 0 {
+		return nil, io.EOF
 	}
-	// log.Printf("len(rest): %d", len(rest))
-	// 123
-	return truncated, nil
+	// log.Printf("Send Response: %s\n", b)
+	fasthttp.ReleaseResponse(resp)
+
+	return b, nil
 }
 
 func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
