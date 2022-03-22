@@ -47,7 +47,9 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	}
 	ctx.WriteString("successful")
 }
+
 func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
+	log.Printf("asdfasdf")
 	switch string(ctx.Path()) {
 	case "/read":
 		w.readHandler(ctx)
