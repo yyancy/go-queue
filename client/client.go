@@ -77,7 +77,7 @@ func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
 
 	lastI := bytes.LastIndexByte(buf, '\n')
 	if lastI == -1 {
-		return nil, nil, errors.New("too small buffer")
+		return nil, nil, errors.New("the buffer is too small to fit the message")
 	}
 	return buf[:lastI+1], buf[lastI+1:], nil
 }

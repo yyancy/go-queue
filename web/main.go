@@ -13,7 +13,7 @@ const defaultBufferSize = 512 * 1024
 
 type Web struct {
 	addrs  []string
-	server server.Server
+	server server.InMemory
 }
 
 func NewWeb(addrs []string) (w *Web, err error) {
@@ -49,7 +49,6 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 }
 
 func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
-	log.Printf("asdfasdf")
 	switch string(ctx.Path()) {
 	case "/read":
 		w.readHandler(ctx)
@@ -60,6 +59,7 @@ func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 }
 func (w *Web) Serve() error {
 
+	log.Printf("The server is running at %d port", 8080)
 	err := fasthttp.ListenAndServe(w.addrs[0]+":8080", w.httpHander)
 	return err
 }
