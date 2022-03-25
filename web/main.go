@@ -4,25 +4,32 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"runtime/debug"
 
 	"github.com/valyala/fasthttp"
-	"github.com/yyancy/go-queue/server"
 )
 
 const defaultBufferSize = 512 * 1024
 
 type Web struct {
 	addrs  []string
-	server server.InMemory
+	server Storage
 }
 
-func NewWeb(addrs []string) (w *Web, err error) {
-	return &Web{addrs: addrs}, nil
+type Storage interface {
+	Recv(off uint, maxSize uint, w io.Writer) error
+	Send(msg []byte) error
+	Ack() error
+}
+
+func NewWeb(s Storage, addrs []string) (w *Web, err error) {
+	return &Web{server: s, addrs: addrs}, nil
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	if err != io.EOF {
 		ctx.SetStatusCode(http.StatusInternalServerError)
 		ctx.WriteString("internal server error: " + err.Error())
+		debug.PrintStack()
 	}
 }
 func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {

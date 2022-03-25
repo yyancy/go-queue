@@ -1,59 +1,77 @@
 package server
 
 import (
-	"bytes"
 	"errors"
+	"io"
+	"os"
 )
 
+const defaultBlockSize = 8 * 1024 * 1024
+
 type OnDisk struct {
-	buf    bytes.Buffer
-	resbuf bytes.Buffer
+	fp *os.File
 }
 
-func NewOnDisk() (*OnDisk, error) {
-	return &OnDisk{}, nil
+func NewOnDisk(fp *os.File) *OnDisk {
+	return &OnDisk{fp}
 }
 
 func (c *OnDisk) Send(msg []byte) error {
 	if len(msg) == 0 {
 		return errors.New("no content to send")
 	}
-	_, err := c.buf.Write(msg)
+	_, err := c.fp.Write(msg)
 	return err
 }
 
-func (c *OnDisk) Recv(buf []byte) ([]byte, error) {
-	if buf == nil {
-		buf = make([]byte, defaultBufferSize)
-	}
-	curbuf := buf
-	curLen := 0
-	if c.resbuf.Len() > 0 {
-		if c.resbuf.Len() > len(curbuf) {
-			return nil, errors.New("The buffer is too small to fit the message")
+func (c *OnDisk) Recv(off uint, maxSize uint, w io.Writer) error {
+	buf := make([]byte, defaultBlockSize)
+	var alreadySendByte uint = 0
+	curOff := off
+	for {
+
+		n, err := c.fp.ReadAt(buf, int64(curOff))
+		// there is occaion: err== io.EOF but n != 0,
+		// which means it has read to the end but has data not sent
+		if n == 0 {
+			if err == io.EOF {
+				return nil
+			} else if err != nil {
+				return err
+			}
 		}
-		n, err := c.resbuf.Read(curbuf)
-		curLen = n
-		if err != nil {
-			return nil, err
+		// log.Printf("alreadySendByte = %d,maxSize = %d", alreadySendByte, maxSize)
+		if alreadySendByte+uint(n) > maxSize {
+			toSend := maxSize - alreadySendByte
+			truncated, _, err := cutLast(buf[0:toSend])
+			if err == errSmallBuffer {
+				return nil
+			} else if err != nil {
+				return err
+			}
+			if _, err = w.Write(truncated); err != nil {
+				return err
+			}
+			// already send to maxSize return to main frame
+			return nil
 		}
-		c.resbuf.Reset()
-		curbuf = buf[n:]
-	}
-	n, err := c.buf.Read(curbuf)
-	if err != nil {
-		return nil, err
+		truncated, _, err := cutLast(buf[0:n])
+		if err == errSmallBuffer {
+			return nil
+		} else if err != nil {
+			return err
+		}
+		if _, err = w.Write(truncated); err != nil {
+			return err
+		}
+		alreadySendByte += uint(len(truncated))
+		curOff += uint(len(truncated))
+
 	}
 
-	curLen += n
-	res := buf[0:curLen]
-
-	truncated, rest, err := cutLast(res)
-	if len(rest) > 0 {
-		_, err := c.resbuf.Write(rest)
-		if err != nil {
-			return nil, err
-		}
-	}
-	return truncated, nil
+}
+func (c *OnDisk) Ack() error {
+	c.fp.Truncate(0)
+	c.fp.Seek(0, 0)
+	return nil
 }

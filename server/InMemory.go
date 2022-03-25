@@ -6,6 +6,8 @@ import (
 	"io"
 )
 
+var errSmallBuffer = errors.New("too small buffer")
+
 const defaultBufferSize = 64 * 1024
 
 type InMemory struct {
@@ -44,7 +46,7 @@ func (c *InMemory) Recv(off uint, maxSize uint, w io.Writer) error {
 
 }
 func (c *InMemory) Ack() error {
-	c.buf = nil
+	c.buf = c.buf[0:0]
 	return nil
 }
 
@@ -56,7 +58,7 @@ func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
 
 	lastI := bytes.LastIndexByte(buf, '\n')
 	if lastI == -1 {
-		return nil, nil, errors.New("too small buffer")
+		return nil, nil, errSmallBuffer
 	}
 	return buf[:lastI+1], buf[lastI+1:], nil
 }

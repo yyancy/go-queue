@@ -64,7 +64,7 @@ func recv(c *client.Client) (sum int64, err error) {
 		} else if err != nil {
 			return 0, err
 		}
-
+		// log.Printf("received %s", res)
 		ints := strings.Split(string(res), "\n")
 		for _, ish := range ints {
 			if ish == "" {
