@@ -15,7 +15,7 @@ const maxN = 10000000
 const maxBufferSize = 1024 * 1024
 
 func main() {
-	c, _ := client.NewClient([]string{"localhost:8080"})
+	c, _ := client.NewClient([]string{"http://localhost:8080"})
 	want, err := send(c)
 	if err != nil {
 		log.Fatalf("Send error: %v", err)

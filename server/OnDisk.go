@@ -57,16 +57,3 @@ func (c *OnDisk) Recv(buf []byte) ([]byte, error) {
 	}
 	return truncated, nil
 }
-
-func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
-	n := len(buf)
-	if n == 0 || buf[n-1] == '\n' {
-		return buf, nil, nil
-	}
-
-	lastI := bytes.LastIndexByte(buf, '\n')
-	if lastI == -1 {
-		return nil, nil, errors.New("too small buffer")
-	}
-	return buf[:lastI+1], buf[lastI+1:], nil
-}

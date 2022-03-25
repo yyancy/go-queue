@@ -3,13 +3,13 @@ package server
 import (
 	"bytes"
 	"errors"
+	"io"
 )
 
 const defaultBufferSize = 64 * 1024
 
 type InMemory struct {
-	buf    bytes.Buffer
-	resbuf bytes.Buffer
+	buf []byte
 }
 
 func NewServer() (*InMemory, error) {
@@ -20,44 +20,32 @@ func (c *InMemory) Send(msg []byte) error {
 	if len(msg) == 0 {
 		return errors.New("no content to send")
 	}
-	_, err := c.buf.Write(msg)
-	return err
+	c.buf = append(c.buf, msg...)
+	return nil
 }
 
-func (c *InMemory) Recv(buf []byte) ([]byte, error) {
-	if buf == nil {
-		buf = make([]byte, defaultBufferSize)
+func (c *InMemory) Recv(off uint, maxSize uint, w io.Writer) error {
+	if off > uint(len(c.buf)) {
+		return nil
 	}
-	curbuf := buf
-	curLen := 0
-	if c.resbuf.Len() > 0 {
-		if c.resbuf.Len() > len(curbuf) {
-			return nil, errors.New("The buffer is too small to fit the message")
-		}
-		n, err := c.resbuf.Read(curbuf)
-		curLen = n
-		if err != nil {
-			return nil, err
-		}
-		c.resbuf.Reset()
-		curbuf = buf[n:]
+	if off+maxSize > uint(len(c.buf)) {
+		w.Write(c.buf[off:])
+		return nil
 	}
-	n, err := c.buf.Read(curbuf)
+
+	truncated, _, err := cutLast(c.buf[off : off+maxSize])
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	curLen += n
-	res := buf[0:curLen]
-
-	truncated, rest, err := cutLast(res)
-	if len(rest) > 0 {
-		_, err := c.resbuf.Write(rest)
-		if err != nil {
-			return nil, err
-		}
+	if _, err := w.Write(truncated); err != nil {
+		return err
 	}
-	return truncated, nil
+	return nil
+
+}
+func (c *InMemory) Ack() error {
+	c.buf = nil
+	return nil
 }
 
 func cutLast(buf []byte) (msg []byte, rest []byte, err error) {

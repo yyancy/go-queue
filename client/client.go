@@ -3,8 +3,10 @@ package client
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"log"
+	"math/rand"
 
 	"github.com/valyala/fasthttp"
 )
@@ -16,6 +18,7 @@ type Client struct {
 	c      *fasthttp.Client
 	buf    bytes.Buffer
 	resbuf bytes.Buffer
+	off    uint
 }
 
 func NewClient(addrs []string) (*Client, error) {
@@ -49,7 +52,10 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 		buf = make([]byte, defaultBufferSize)
 	}
 	req := fasthttp.AcquireRequest()
-	req.SetRequestURI("http://localhost:8080/read")
+	addrIdx := rand.Intn(len(c.addrs))
+	readURL := c.addrs[addrIdx]
+	addr := fmt.Sprintf("%s/read?off=%d&maxSize=%d", readURL, c.off, uint(len(buf)))
+	req.SetRequestURI(addr)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
@@ -61,12 +67,30 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	}
 	b := resp.Body()
 	if len(b) == 0 {
+		if err := c.ackCurrentChunk(readURL); err != nil {
+			return nil, err
+		}
 		return nil, io.EOF
 	}
+	c.off += uint(len(b))
 	// log.Printf("Send Response: %s\n", b)
 	fasthttp.ReleaseResponse(resp)
 
 	return b, nil
+}
+func (c *Client) ackCurrentChunk(addr string) error {
+	req := fasthttp.AcquireRequest()
+	req.SetRequestURI(addr + "/ack")
+	req.Header.SetMethod(fasthttp.MethodGet)
+	resp := fasthttp.AcquireResponse()
+	err := c.c.Do(req, resp)
+	fasthttp.ReleaseRequest(req)
+
+	if err != nil {
+		fasthttp.ReleaseResponse(resp)
+		log.Fatalf("ERR Connection error: %s\n", err)
+	}
+	return nil
 }
 
 func cutLast(buf []byte) (msg []byte, rest []byte, err error) {

@@ -26,21 +26,26 @@ func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	}
 }
 func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {
-	buf := make([]byte, defaultBufferSize)
-	res, err := w.server.Recv(buf)
+	off, err := ctx.QueryArgs().GetUint("off")
 	if err != nil {
 		w.errorHandler(err, ctx)
-	}
-	if len(res) == 0 {
-		ctx.SetConnectionClose()
 		return
 	}
-	log.Printf("read(): got %q", string(res))
-	ctx.WriteString(string(res))
+	maxSize, err := ctx.QueryArgs().GetUint("maxSize")
+	if err != nil {
+		w.errorHandler(err, ctx)
+		return
+	}
+	err = w.server.Recv(uint(off), uint(maxSize), ctx)
+	if err != nil {
+		w.errorHandler(err, ctx)
+		return
+	}
+
 }
 func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	b := ctx.PostBody()
-	log.Printf("write(): recieved %q", string(b))
+	// log.Printf("write(): recieved %q", string(b))
 	err := w.server.Send(b)
 	if err != nil {
 		w.errorHandler(err, ctx)
@@ -48,6 +53,14 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	ctx.WriteString("successful")
 }
 
+func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
+	log.Printf("ack(): recieved %q", "yummy")
+	err := w.server.Ack()
+	if err != nil {
+		w.errorHandler(err, ctx)
+	}
+	ctx.WriteString("successful")
+}
 func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 	switch string(ctx.Path()) {
 	case "/read":
@@ -55,6 +68,8 @@ func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 
 	case "/write":
 		w.writeHandler(ctx)
+	case "/ack":
+		w.ackHandler(ctx)
 	}
 }
 func (w *Web) Serve() error {
