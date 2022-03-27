@@ -3,7 +3,6 @@ package main
 import (
 	"flag"
 	"log"
-	"os"
 
 	"github.com/valyala/fasthttp"
 	"github.com/yyancy/go-queue/server"
@@ -17,6 +16,7 @@ func writeHander(ctx *fasthttp.RequestCtx) {
 var (
 	filename = flag.String("filename", "", "the filename where to put all data")
 	inmem    = flag.Bool("inmem", false, "Whether or not use in-memory storage instead of a disk-based one")
+	port     = flag.Uint("port", 8080, "The port where the server listen to")
 )
 
 func main() {
@@ -28,18 +28,18 @@ func main() {
 		storage = &server.InMemory{}
 	} else {
 
-		if *filename == "" {
-			log.Fatalf("the flag --filename must be provided")
-		}
-		fp, err := os.OpenFile(*filename, os.O_CREATE|os.O_RDWR, 0666)
-		if err != nil {
-			log.Fatalf("could not open the filename %q, %s", *filename, err)
-		}
-		defer fp.Close()
-		storage = server.NewOnDisk(fp)
+		// if *filename == "" {
+		// 	log.Fatalf("the flag --filename must be provided")
+		// }
+		// fp, err := os.OpenFile(*filename, os.O_CREATE|os.O_RDWR, 0666)
+		// if err != nil {
+		// 	log.Fatalf("could not open the filename %q, %s", *filename, err)
+		// }
+		// defer fp.Close()
+		// storage = server.NewOnDisk(fp)
 	}
 
-	w, _ := web.NewWeb(storage, []string{"localhost"})
+	w, _ := web.NewWeb(storage, []string{"localhost"}, *port)
 	err := w.Serve()
 	if err != nil {
 		log.Fatalf("web.Serve(): got err %v", err)

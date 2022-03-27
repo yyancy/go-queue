@@ -2,11 +2,17 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"go/build"
 	"io"
 	"log"
+	"net"
+	"os"
+	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/yyancy/go-queue/client"
 )
@@ -15,7 +21,55 @@ const maxN = 10000000
 const maxBufferSize = 1024 * 1024
 
 func main() {
-	c, _ := client.NewClient([]string{"http://localhost:8080"})
+	if err := runTest(); err != nil {
+		log.Fatalf("Test failed: %v", err)
+	}
+	log.Printf("Test passed")
+}
+
+func runTest() error {
+
+	log.SetFlags(log.Llongfile | log.LstdFlags)
+	goPath := os.Getenv("GOPATH")
+	if goPath == "" {
+		goPath = build.Default.GOPATH
+	}
+	log.Printf("compiling go-queue")
+	out, err := exec.Command("go", "install", "-v", "github.com/yyancy/go-queue").CombinedOutput()
+	log.Printf("%s", string(out))
+	if err != nil {
+		log.Printf("Failed to build: %v", err)
+		return fmt.Errorf("compilation failed: %v (out: %s)", err, string(out))
+	}
+	port := 8080
+	dbPath := "/tmp/yancy.db"
+	os.Remove(dbPath)
+	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
+	cmd := exec.Command(goPath+"/bin/go-queue", "-inmem", "-filename="+dbPath, fmt.Sprintf("-port=%d", port))
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Start(); err != nil {
+		if err != nil {
+			return err
+		}
+
+	}
+	defer cmd.Process.Kill()
+	log.Printf("Waiting for the port localhost:%d to open", port)
+	for i := 0; i <= 100; i++ {
+		timeout := time.Millisecond * 50
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", fmt.Sprint(port)), timeout)
+		if err != nil {
+			time.Sleep(timeout)
+			continue
+		}
+		conn.Close()
+		break
+	}
+	log.Printf("Starting the test")
+
+	c, _ := client.NewClient([]string{"http://localhost:" + fmt.Sprint(port)})
 	want, err := send(c)
 	if err != nil {
 		log.Fatalf("Send error: %v", err)
@@ -28,7 +82,7 @@ func main() {
 	if want != got {
 		log.Fatalf("The expected sum %d is not equal to the actual sum %d", want, got)
 	}
-	log.Printf("The test passed")
+	return nil
 }
 
 func send(c *client.Client) (sum int64, err error) {
@@ -59,7 +113,7 @@ func recv(c *client.Client) (sum int64, err error) {
 	sum = 0
 	for {
 		res, err := c.Recv(buf)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			return sum, nil
 		} else if err != nil {
 			return 0, err

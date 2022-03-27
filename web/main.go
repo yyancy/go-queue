@@ -1,29 +1,34 @@
 package web
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"runtime/debug"
 
 	"github.com/valyala/fasthttp"
+	"github.com/yyancy/go-queue/server"
 )
 
 const defaultBufferSize = 512 * 1024
 
 type Web struct {
 	addrs  []string
+	port   uint
 	server Storage
 }
 
 type Storage interface {
-	Recv(off uint, maxSize uint, w io.Writer) error
 	Send(msg []byte) error
-	Ack() error
+	Recv(chunk string, off uint, maxSize uint, w io.Writer) error
+	Ack(chunk string) error
+	ListChunks() ([]server.Chunk, error)
 }
 
-func NewWeb(s Storage, addrs []string) (w *Web, err error) {
-	return &Web{server: s, addrs: addrs}, nil
+func NewWeb(s Storage, addrs []string, port uint) (w *Web, err error) {
+	return &Web{server: s, addrs: addrs, port: port}, nil
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	if err != io.EOF {
@@ -43,7 +48,8 @@ func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {
 		w.errorHandler(err, ctx)
 		return
 	}
-	err = w.server.Recv(uint(off), uint(maxSize), ctx)
+	chunk := ctx.QueryArgs().Peek("chunk")
+	err = w.server.Recv(string(chunk), uint(off), uint(maxSize), ctx)
 	if err != nil {
 		w.errorHandler(err, ctx)
 		return
@@ -60,9 +66,18 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	ctx.WriteString("successful")
 }
 
+func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
+	chunks, err := w.server.ListChunks()
+	if err != nil {
+		w.errorHandler(err, ctx)
+	}
+	json.NewEncoder(ctx).Encode(chunks)
+}
+
 func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
 	log.Printf("ack(): recieved %q", "yummy")
-	err := w.server.Ack()
+	chunk := ctx.QueryArgs().Peek("chunk")
+	err := w.server.Ack(string(chunk))
 	if err != nil {
 		w.errorHandler(err, ctx)
 	}
@@ -77,11 +92,13 @@ func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 		w.writeHandler(ctx)
 	case "/ack":
 		w.ackHandler(ctx)
+	case "/listChunks":
+		w.listChunksHandler(ctx)
 	}
 }
 func (w *Web) Serve() error {
 
-	log.Printf("The server is running at %d port", 8080)
-	err := fasthttp.ListenAndServe(w.addrs[0]+":8080", w.httpHander)
+	log.Printf("The server is running at %d port", w.port)
+	err := fasthttp.ListenAndServe(w.addrs[0]+":"+fmt.Sprint(w.port), w.httpHander)
 	return err
 }
