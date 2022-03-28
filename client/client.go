@@ -54,8 +54,10 @@ func (c *Client) Send(msg []byte) error {
 		return errors.New("no content to send")
 	}
 	// _, err := c.buf.Write(msg)
+	addrIdx := rand.Intn(len(c.addrs))
+	readURL := c.addrs[addrIdx]
 	req := fasthttp.AcquireRequest()
-	req.SetRequestURI("http://localhost:8080/write")
+	req.SetRequestURI(fmt.Sprintf("%s/write", readURL))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.SetBody(msg)
 	resp := fasthttp.AcquireResponse()
@@ -75,6 +77,7 @@ func (c *Client) updateCurrentChunk(addr string) error {
 		return nil
 	}
 	chunks, err := c.listChunks(addr)
+	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)
 	}
@@ -125,6 +128,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 
 	return b, nil
 }
+
 func (c *Client) ackCurrentChunk(addr string) error {
 	req := fasthttp.AcquireRequest()
 	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s", c.curChunk))

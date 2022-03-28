@@ -63,7 +63,7 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	if err != nil {
 		w.errorHandler(err, ctx)
 	}
-	ctx.WriteString("successful")
+	ctx.WriteString("successful\n")
 }
 
 func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
@@ -75,19 +75,18 @@ func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
 }
 
 func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
-	log.Printf("ack(): recieved %q", "yummy")
 	chunk := ctx.QueryArgs().Peek("chunk")
+	log.Printf("ack(): recieved chunk=`%s`", chunk)
 	err := w.server.Ack(string(chunk))
 	if err != nil {
 		w.errorHandler(err, ctx)
 	}
-	ctx.WriteString("successful")
+	ctx.WriteString("successful\n")
 }
 func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 	switch string(ctx.Path()) {
 	case "/read":
 		w.readHandler(ctx)
-
 	case "/write":
 		w.writeHandler(ctx)
 	case "/ack":

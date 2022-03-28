@@ -128,6 +128,9 @@ func recv(c *client.Client) (sum int64, err error) {
 			if err != nil {
 				return 0, err
 			}
+			// if idx < 2 {
+			// 	log.Printf("recived number=%d", i)
+			// }
 			sum += int64(i)
 		}
 	}

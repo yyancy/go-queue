@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -77,13 +80,29 @@ func (c *InMemory) Ack(chunk string) error {
 	if !ok {
 		return fmt.Errorf("chunk %q does not exist", chunk)
 	}
+	// last chunk cannot be written and acknowledged
+	if chunk == c.lastChunk {
+		return fmt.Errorf("Chunk %q is currently being written into and cannot be acknowledged", chunk)
+	}
 	delete(c.bufs, chunk)
 	return nil
 }
 
 func (c *InMemory) ListChunks() ([]Chunk, error) {
 	res := make([]Chunk, 0, len(c.bufs))
-	for chunk := range c.bufs {
+	keys := make([]string, 0, len(c.bufs))
+	for k := range c.bufs {
+		keys = append(keys, k)
+	}
+	// log.Printf("keys %v", keys)
+	sort.Slice(keys, func(i, j int) bool {
+		_, s1, _ := strings.Cut(keys[i], "chunk")
+		_, s2, _ := strings.Cut(keys[j], "chunk")
+		i1, _ := strconv.Atoi(s1)
+		i2, _ := strconv.Atoi(s2)
+		return i1 < i2
+	})
+	for _, chunk := range keys {
 		var ch Chunk
 		ch.Complete = c.lastChunk != chunk
 		ch.Name = chunk
