@@ -14,7 +14,7 @@ import (
 var errSmallBuffer = errors.New("too small buffer")
 
 const defaultBufferSize = 64 * 1024
-const maxInMemoryChunkSize = 1024 * 1024
+const maxInMemoryChunkSize = 20 * 1024 * 1024
 
 type InMemory struct {
 	sync.RWMutex

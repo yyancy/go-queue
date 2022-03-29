@@ -115,7 +115,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	b := resp.Body()
 	if len(b) == 0 {
 		if err := c.ackCurrentChunk(readURL); err != nil {
-			return nil, fmt.Errorf("ack current chunk %v:", err)
+			return nil, fmt.Errorf("ack current chunk %w:", err)
 		}
 		c.curChunk = ""
 		c.off = 0
@@ -136,7 +136,10 @@ func (c *Client) ackCurrentChunk(addr string) error {
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
 	fasthttp.ReleaseRequest(req)
-
+	if resp.StatusCode() != fasthttp.StatusOK {
+		return fmt.Errorf("server error: %v, %w", string(resp.Body()), io.EOF)
+		// return io.EOF
+	}
 	if err != nil {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)

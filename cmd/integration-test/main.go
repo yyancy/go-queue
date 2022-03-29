@@ -42,10 +42,11 @@ func runTest() error {
 		return fmt.Errorf("compilation failed: %v (out: %s)", err, string(out))
 	}
 	port := 8080
-	dbPath := "/tmp/yancy.db"
-	os.Remove(dbPath)
+	dbPath := "E:/yancy/"
+	os.RemoveAll(dbPath)
+	os.Mkdir(dbPath, 0777)
 	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
-	cmd := exec.Command(goPath+"/bin/go-queue", "-inmem", "-filename="+dbPath, fmt.Sprintf("-port=%d", port))
+	cmd := exec.Command(goPath+"/bin/go-queue", "-dirname="+dbPath, fmt.Sprintf("-port=%d", port))
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -78,9 +79,9 @@ func runTest() error {
 	if err != nil {
 		log.Fatalf("Recv error: %v", err)
 	}
-
+	cmd.Process.Kill()
 	if want != got {
-		log.Fatalf("The expected sum %d is not equal to the actual sum %d", want, got)
+		log.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
 	}
 	return nil
 }

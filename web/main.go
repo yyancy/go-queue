@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"runtime/debug"
 
 	"github.com/valyala/fasthttp"
 	"github.com/yyancy/go-queue/server"
@@ -33,8 +32,9 @@ func NewWeb(s Storage, addrs []string, port uint) (w *Web, err error) {
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	if err != io.EOF {
 		ctx.SetStatusCode(http.StatusInternalServerError)
-		ctx.WriteString("internal server error: " + err.Error())
-		debug.PrintStack()
+		ctx.WriteString("internal server error:" + err.Error())
+		log.Printf("internal server error:" + err.Error())
+		// debug.PrintStack()
 	}
 }
 func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {
@@ -80,8 +80,9 @@ func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
 	err := w.server.Ack(string(chunk))
 	if err != nil {
 		w.errorHandler(err, ctx)
+	} else {
+		ctx.WriteString("successful\n")
 	}
-	ctx.WriteString("successful\n")
 }
 func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 	switch string(ctx.Path()) {
