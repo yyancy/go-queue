@@ -4,11 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -118,30 +116,24 @@ func (c *OnDisk) Recv(chunk string, off uint, maxSize uint, w io.Writer) error {
 
 }
 func (c *OnDisk) ListChunks() ([]Chunk, error) {
-	c.RLock()
-	defer c.RUnlock()
-	res := make([]Chunk, 0, len(c.fps))
-	keys := make([]string, 0, len(c.fps))
-	for k := range c.fps {
-		keys = append(keys, k)
-	}
-	// log.Printf("keys %v", keys)
-	sort.Slice(keys, func(i, j int) bool {
-		_, s1, _ := strings.Cut(keys[i], "chunk")
-		_, s2, _ := strings.Cut(keys[j], "chunk")
-		i1, _ := strconv.Atoi(s1)
-		i2, _ := strconv.Atoi(s2)
-		return i1 < i2
-	})
-	for _, chunk := range keys {
-		var ch Chunk
-		ch.Complete = c.lastChunk != chunk
-		ch.Name = chunk
+	var res []Chunk
 
-		res = append(res, ch)
+	dis, err := os.ReadDir(c.dirname)
+	if err != nil {
+		return nil, err
 	}
+
+	for _, di := range dis {
+		c := Chunk{
+			Name:     di.Name(),
+			Complete: (di.Name() != c.lastChunk),
+		}
+		res = append(res, c)
+	}
+	log.Printf("chunks %v", res)
 	return res, nil
 }
+
 func (c *OnDisk) Ack(chunk string) error {
 	c.Lock()
 	defer c.Unlock()

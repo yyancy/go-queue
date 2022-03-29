@@ -43,7 +43,7 @@ func runTest() error {
 	}
 	port := 8080
 	dbPath := "E:/yancy/"
-	os.RemoveAll(dbPath)
+	// os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
 	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
 	cmd := exec.Command(goPath+"/bin/go-queue", "-dirname="+dbPath, fmt.Sprintf("-port=%d", port))

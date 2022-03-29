@@ -16,13 +16,10 @@ import (
 const defaultBufferSize = 64 * 1024
 
 type Client struct {
-	addrs     []string
-	c         *fasthttp.Client
-	buf       bytes.Buffer
-	resbuf    bytes.Buffer
-	off       uint
-	lastChunk string
-	curChunk  string
+	addrs    []string
+	c        *fasthttp.Client
+	off      uint
+	curChunk server.Chunk
 }
 
 func NewClient(addrs []string) (*Client, error) {
@@ -37,7 +34,7 @@ func (c *Client) listChunks(addr string) ([]server.Chunk, error) {
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
 	fasthttp.ReleaseRequest(req)
-
+	log.Printf("received chunks %v", string(resp.Body()))
 	if err != nil {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
@@ -73,7 +70,7 @@ func (c *Client) Send(msg []byte) error {
 }
 
 func (c *Client) updateCurrentChunk(addr string) error {
-	if c.curChunk != "" {
+	if c.curChunk.Name != "" {
 		return nil
 	}
 	chunks, err := c.listChunks(addr)
@@ -85,7 +82,15 @@ func (c *Client) updateCurrentChunk(addr string) error {
 	if len(chunks) == 0 {
 		return io.EOF
 	}
-	c.curChunk = chunks[0].Name
+	// We need to prioritise the chunks that are complete
+	// so that we ack them.
+	for _, ch := range chunks {
+		if ch.Complete {
+			c.curChunk = ch
+			return nil
+		}
+	}
+	c.curChunk = chunks[0]
 	return nil
 }
 
@@ -101,7 +106,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 		return nil, fmt.Errorf("updateCurrentChunk %w", err)
 	}
 
-	addr := fmt.Sprintf("%s/read?off=%d&maxSize=%d&chunk=%s", readURL, c.off, uint(len(buf)), c.curChunk)
+	addr := fmt.Sprintf("%s/read?off=%d&maxSize=%d&chunk=%s", readURL, c.off, uint(len(buf)), c.curChunk.Name)
 	req.SetRequestURI(addr)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
@@ -114,10 +119,13 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	}
 	b := resp.Body()
 	if len(b) == 0 {
+		if !c.curChunk.Complete {
+			return nil, io.EOF
+		}
 		if err := c.ackCurrentChunk(readURL); err != nil {
 			return nil, fmt.Errorf("ack current chunk %w:", err)
 		}
-		c.curChunk = ""
+		c.curChunk = server.Chunk{}
 		c.off = 0
 		return c.Recv(buf)
 
@@ -137,7 +145,7 @@ func (c *Client) ackCurrentChunk(addr string) error {
 	err := c.c.Do(req, resp)
 	fasthttp.ReleaseRequest(req)
 	if resp.StatusCode() != fasthttp.StatusOK {
-		return fmt.Errorf("server error: %v, %w", string(resp.Body()), io.EOF)
+		return fmt.Errorf("http code %d, %s", resp.StatusCode(), string(resp.Body()))
 		// return io.EOF
 	}
 	if err != nil {
