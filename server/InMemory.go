@@ -5,9 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"sort"
-	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -95,13 +92,13 @@ func (c *InMemory) ListChunks() ([]Chunk, error) {
 		keys = append(keys, k)
 	}
 	// log.Printf("keys %v", keys)
-	sort.Slice(keys, func(i, j int) bool {
-		_, s1, _ := strings.Cut(keys[i], "chunk")
-		_, s2, _ := strings.Cut(keys[j], "chunk")
-		i1, _ := strconv.Atoi(s1)
-		i2, _ := strconv.Atoi(s2)
-		return i1 < i2
-	})
+	// sort.Slice(keys, func(i, j int) bool {
+	// 	_, s1, _ := strings.Cut(keys[i], "chunk")
+	// 	_, s2, _ := strings.Cut(keys[j], "chunk")
+	// 	i1, _ := strconv.Atoi(s1)
+	// 	i2, _ := strconv.Atoi(s2)
+	// 	return i1 < i2
+	// })
 	for _, chunk := range keys {
 		var ch Chunk
 		ch.Complete = c.lastChunk != chunk

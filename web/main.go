@@ -68,6 +68,7 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 
 func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
 	chunks, err := w.server.ListChunks()
+	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		w.errorHandler(err, ctx)
 	}

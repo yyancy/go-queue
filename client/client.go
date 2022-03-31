@@ -34,7 +34,7 @@ func (c *Client) listChunks(addr string) ([]server.Chunk, error) {
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
 	fasthttp.ReleaseRequest(req)
-	log.Printf("received chunks %v", string(resp.Body()))
+	// log.Printf("received chunks %v", string(resp.Body()))
 	if err != nil {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
@@ -73,6 +73,7 @@ func (c *Client) updateCurrentChunk(addr string) error {
 	if c.curChunk.Name != "" {
 		return nil
 	}
+	// log.Printf("updateCurrentChunk %s", addr)
 	chunks, err := c.listChunks(addr)
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
@@ -94,6 +95,23 @@ func (c *Client) updateCurrentChunk(addr string) error {
 	return nil
 }
 
+func (c *Client) updateCurrentChunkCompleteStatus(addr string) error {
+	chunks, err := c.listChunks(addr)
+	// log.Printf("chunks=%v", chunks)
+	if err != nil {
+		return fmt.Errorf("listChunks failed: %v", err)
+	}
+
+	// We need to prioritise the chunks that are complete
+	// so that we ack them.
+	for _, ch := range chunks {
+		if c.curChunk.Name == ch.Name {
+			c.curChunk = ch
+			return nil
+		}
+	}
+	return nil
+}
 func (c *Client) Recv(buf []byte) ([]byte, error) {
 	if buf == nil {
 		buf = make([]byte, defaultBufferSize)
@@ -119,6 +137,11 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	}
 	b := resp.Body()
 	if len(b) == 0 {
+		if !c.curChunk.Complete {
+			if err := c.updateCurrentChunkCompleteStatus(readURL); err != nil {
+				return nil, fmt.Errorf("updateCurrentChunkCompleteStatus(%s) failed %v", addr, err)
+			}
+		}
 		if !c.curChunk.Complete {
 			return nil, io.EOF
 		}

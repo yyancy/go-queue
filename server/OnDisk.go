@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -42,7 +41,7 @@ func NewOnDisk(dirname string) (*OnDisk, error) {
 		if err != nil {
 			return nil, fmt.Errorf("strconv.atoi: %v", err)
 		}
-		log.Printf("chunkIdx=%d", chunkIdx)
+		// log.Printf("chunkIdx=%d", chunkIdx)
 		if uint64(chunkIdx)+1 > s.lastChunkIdx {
 			s.lastChunkIdx = uint64(chunkIdx) + 1
 		}
@@ -85,6 +84,8 @@ func (c *OnDisk) getFileDecriptor(chunk string) (*os.File, error) {
 }
 
 func (c *OnDisk) Recv(chunk string, off uint, maxSize uint, w io.Writer) error {
+	c.RLock()
+	defer c.RUnlock()
 	chunk = filepath.Clean(chunk)
 	_, err := os.Stat(filepath.Join(c.dirname, chunk))
 	if err != nil {
@@ -154,7 +155,7 @@ func (c *OnDisk) ListChunks() ([]Chunk, error) {
 		}
 		res = append(res, c)
 	}
-	log.Printf("chunks %v", res)
+	// log.Printf("chunks %v", res)
 	return res, nil
 }
 

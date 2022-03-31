@@ -44,7 +44,7 @@ func runTest() error {
 		return fmt.Errorf("compilation failed: %v (out: %s)", err, string(out))
 	}
 	port := 8080
-	dbPath := "E:/yancy/"
+	dbPath := "/tmp/yancy.db"
 	os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
 
@@ -62,10 +62,10 @@ func runTest() error {
 
 	}
 	defer cmd.Process.Kill()
-	log.Printf("Waiting for the port localhost:%d to open", port)
+	log.Printf("Waiting for the port 127.0.0.1:%d to open", port)
 	for i := 0; i <= 100; i++ {
 		timeout := time.Millisecond * 50
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", fmt.Sprint(port)), timeout)
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)), timeout)
 		if err != nil {
 			time.Sleep(timeout)
 			continue
@@ -75,22 +75,58 @@ func runTest() error {
 	}
 	log.Printf("Starting the test")
 
-	c, _ := client.NewClient([]string{"http://localhost:" + fmt.Sprint(port)})
-	want, err := send(c)
-	if err != nil {
-		log.Fatalf("Send error: %v", err)
-	}
-	got, err := recv(c)
-	if err != nil {
-		log.Fatalf("Recv error: %v", err)
-	}
-	cmd.Process.Kill()
+	c, _ := client.NewClient([]string{"http://127.0.0.1:" + fmt.Sprint(port)})
 
+	want, got, err := sendAndRecvConcurrently(c)
+	cmd.Process.Kill()
+	if err != nil {
+		return err
+	}
 	want += 12345
 	if want != got {
 		log.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
 	}
 	return nil
+}
+
+type SumAndError struct {
+	sum int64
+	err error
+}
+
+func sendAndRecvConcurrently(c *client.Client) (want, got int64, err error) {
+	wantCh := make(chan SumAndError, 1)
+	gotCh := make(chan SumAndError, 1)
+	completeCh := make(chan bool, 1)
+	// produrer
+	go func() {
+		want, err := send(c)
+		wantCh <- SumAndError{
+			sum: want,
+			err: err,
+		}
+		// log.Print("already send all data")
+		completeCh <- true
+	}()
+	// cumsomer
+	go func() {
+		// time.Sleep(1000 * time.Millisecond)
+		got, err := recv(c, completeCh)
+		gotCh <- SumAndError{
+			sum: got,
+			err: err,
+		}
+	}()
+
+	wantRes := <-wantCh
+	if wantRes.err != nil {
+		return 0, 0, fmt.Errorf("send: %v", wantRes.err)
+	}
+	gotRes := <-gotCh
+	if gotRes.err != nil {
+		return 0, 0, fmt.Errorf("send: %v", gotRes.err)
+	}
+	return wantRes.sum, gotRes.sum, nil
 }
 
 func send(c *client.Client) (sum int64, err error) {
@@ -116,13 +152,25 @@ func send(c *client.Client) (sum int64, err error) {
 	return sum, nil
 
 }
-func recv(c *client.Client) (sum int64, err error) {
+func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)
 	sum = 0
+	sendFinished := false
 	for {
+		select {
+		case <-completeCh:
+			// log.Printf("Receive: got information that send finished")
+			sendFinished = true
+		default:
+		}
 		res, err := c.Recv(buf)
 		if errors.Is(err, io.EOF) {
-			return sum, nil
+			// log.Printf("EOF happened")
+			if sendFinished {
+				return sum, nil
+			}
+			// time.Sleep(100 * time.Millisecond)
+			continue
 		} else if err != nil {
 			return 0, err
 		}
