@@ -76,7 +76,7 @@ func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
 
 func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
 	chunk := ctx.QueryArgs().Peek("chunk")
-	log.Printf("ack(): recieved chunk=`%s`", chunk)
+	// log.Printf("ack(): recieved chunk=`%s`", chunk)
 	if err := w.server.Ack(string(chunk)); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.WriteString(err.Error())

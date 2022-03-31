@@ -37,7 +37,10 @@ func main() {
 		}
 		fp.Close()
 		os.Remove(fp.Name())
-		storage = server.NewOnDisk(*dirname)
+		storage, err = server.NewOnDisk(*dirname)
+		if err != nil {
+			log.Fatalf("server.NewOnDisk: %v", err)
+		}
 	}
 
 	w, _ := web.NewWeb(storage, []string{"localhost"}, *port)

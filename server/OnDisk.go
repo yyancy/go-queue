@@ -7,6 +7,8 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"sync"
 )
 
@@ -23,8 +25,30 @@ type OnDisk struct {
 	fps           map[string]*os.File
 }
 
-func NewOnDisk(dirname string) *OnDisk {
-	return &OnDisk{dirname: dirname, fps: make(map[string]*os.File)}
+var filenameRegexp = regexp.MustCompile("^chunk([0-9]+)$")
+
+func NewOnDisk(dirname string) (*OnDisk, error) {
+	s := &OnDisk{dirname: dirname, fps: make(map[string]*os.File)}
+	files, err := os.ReadDir(dirname)
+	if err != nil {
+		return nil, fmt.Errorf("ReadDir: %v", err)
+	}
+	for _, file := range files {
+		res := filenameRegexp.FindStringSubmatch(file.Name())
+		if res == nil {
+			continue
+		}
+		chunkIdx, err := strconv.Atoi(res[1])
+		if err != nil {
+			return nil, fmt.Errorf("strconv.atoi: %v", err)
+		}
+		log.Printf("chunkIdx=%d", chunkIdx)
+		if uint64(chunkIdx)+1 > s.lastChunkIdx {
+			s.lastChunkIdx = uint64(chunkIdx) + 1
+		}
+	}
+
+	return s, nil
 }
 
 func (c *OnDisk) Send(msg []byte) error {

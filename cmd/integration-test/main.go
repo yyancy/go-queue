@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"go/build"
 	"io"
+	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -43,8 +45,11 @@ func runTest() error {
 	}
 	port := 8080
 	dbPath := "E:/yancy/"
-	// os.RemoveAll(dbPath)
+	os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
+
+	ioutil.WriteFile(filepath.Join(dbPath, "chunk1"), []byte("12345\n"), 0666)
+
 	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
 	cmd := exec.Command(goPath+"/bin/go-queue", "-dirname="+dbPath, fmt.Sprintf("-port=%d", port))
 	cmd.Stdout = os.Stdout
@@ -80,6 +85,8 @@ func runTest() error {
 		log.Fatalf("Recv error: %v", err)
 	}
 	cmd.Process.Kill()
+
+	want += 12345
 	if want != got {
 		log.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
 	}
