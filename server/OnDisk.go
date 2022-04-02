@@ -12,7 +12,7 @@ import (
 )
 
 const defaultBlockSize = 8 * 1024 * 1024
-const maxFileChunkSize = 30 * 1024 * 1024
+const maxFileChunkSize = 20 * 1024 * 1024
 
 type OnDisk struct {
 	dirname string
@@ -32,6 +32,7 @@ func NewOnDisk(dirname string) (*OnDisk, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ReadDir: %v", err)
 	}
+	// find the existing maximum index of chunks
 	for _, file := range files {
 		res := filenameRegexp.FindStringSubmatch(file.Name())
 		if res == nil {
@@ -39,7 +40,7 @@ func NewOnDisk(dirname string) (*OnDisk, error) {
 		}
 		chunkIdx, err := strconv.Atoi(res[1])
 		if err != nil {
-			return nil, fmt.Errorf("strconv.atoi: %v", err)
+			return nil, fmt.Errorf("strconv.atoi(%s): %v", res[1], err)
 		}
 		// log.Printf("chunkIdx=%d", chunkIdx)
 		if uint64(chunkIdx)+1 > s.lastChunkIdx {

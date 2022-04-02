@@ -79,7 +79,7 @@ func (c *Client) updateCurrentChunk(addr string) error {
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)
 	}
-
+	// there is no chunk
 	if len(chunks) == 0 {
 		return io.EOF
 	}
