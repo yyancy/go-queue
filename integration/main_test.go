@@ -1,69 +1,60 @@
-package main
+package integration
 
 import (
 	"bytes"
 	"errors"
 	"fmt"
-	"go/build"
 	"io"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
+	"github.com/phayes/freeport"
 	"github.com/yyancy/go-queue/client"
 )
 
-const maxN = 10000000
-const maxBufferSize = 1024 * 1024
+const (
+	maxN          = 10000000
+	maxBufferSize = 1024 * 1024
+)
 
-func main() {
-	if err := runTest(); err != nil {
-		log.Fatalf("Test failed: %v", err)
-	}
-	log.Printf("Test passed")
-}
+func TestSimpleClientAndServer(t *testing.T) {
 
-func runTest() error {
-
-	log.SetFlags(log.Llongfile | log.LstdFlags)
-	goPath := os.Getenv("GOPATH")
-	if goPath == "" {
-		goPath = build.Default.GOPATH
-	}
-	log.Printf("compiling go-queue")
-	out, err := exec.Command("go", "install", "-v", "github.com/yyancy/go-queue").CombinedOutput()
-	log.Printf("%s", string(out))
+	p, err := freeport.GetFreePort()
 	if err != nil {
-		log.Printf("Failed to build: %v", err)
-		return fmt.Errorf("compilation failed: %v (out: %s)", err, string(out))
+		log.Fatal(err)
 	}
-	port := 8080
-	dbPath := "/tmp/yancy.db"
+	port := uint(p)
+	dbPath, err := os.MkdirTemp(os.TempDir(), "go-queue")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
 	os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
 
 	ioutil.WriteFile(filepath.Join(dbPath, "chunk1"), []byte("12345\n"), 0666)
 
-	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
-	cmd := exec.Command(goPath+"/bin/go-queue", "-dirname="+dbPath, fmt.Sprintf("-port=%d", port))
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- InitAndServe(dbPath, port)
+	}()
 
-	if err := cmd.Start(); err != nil {
-		if err != nil {
-			return err
-		}
-
-	}
-	defer cmd.Process.Kill()
 	log.Printf("Waiting for the port 127.0.0.1:%d to open", port)
 	for i := 0; i <= 100; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("InitAndServe(%s, %d): %v", dbPath, port, err)
+			}
+		default:
+		}
+
 		timeout := time.Millisecond * 50
 		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)), timeout)
 		if err != nil {
@@ -78,15 +69,13 @@ func runTest() error {
 	c, _ := client.NewClient([]string{"http://127.0.0.1:" + fmt.Sprint(port)})
 
 	want, got, err := sendAndRecvConcurrently(c)
-	cmd.Process.Kill()
 	if err != nil {
-		return err
+		t.Fatalf("sendAndRecvConcurrently(): %v", err)
 	}
 	want += 12345
 	if want != got {
-		log.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
+		t.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
 	}
-	return nil
 }
 
 type SumAndError struct {

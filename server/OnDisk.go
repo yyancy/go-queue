@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 
 const defaultBlockSize = 8 * 1024 * 1024
 const maxFileChunkSize = 20 * 1024 * 1024
+
+var errSmallBuffer = errors.New("too small buffer")
 
 type OnDisk struct {
 	dirname string
@@ -185,4 +188,17 @@ func (c *OnDisk) Ack(chunk string) error {
 
 	delete(c.fps, chunk)
 	return nil
+}
+
+func cutLast(buf []byte) (msg []byte, rest []byte, err error) {
+	n := len(buf)
+	if n == 0 || buf[n-1] == '\n' {
+		return buf, nil, nil
+	}
+
+	lastI := bytes.LastIndexByte(buf, '\n')
+	if lastI == -1 {
+		return nil, nil, errSmallBuffer
+	}
+	return buf[:lastI+1], buf[lastI+1:], nil
 }
