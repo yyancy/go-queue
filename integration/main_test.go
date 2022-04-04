@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,19 +21,24 @@ import (
 const (
 	maxN          = 10000000
 	maxBufferSize = 1024 * 1024
+	sendFmt       = "Send: net %13s, cpu %13s (%.1f MiB)"
+	recvFmt       = "Recv: net %13s, cpu %13s"
 )
 
 func TestSimpleClientAndServerConcurently(t *testing.T) {
 	t.Parallel()
 	SimpleClientAndServerTest(t, true)
 }
+
 func TestSimpleClientAndServerSequentially(t *testing.T) {
 	t.Parallel()
 	SimpleClientAndServerTest(t, false)
+
 }
 
 func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 	t.Helper()
+
 	p, err := freeport.GetFreePort()
 	if err != nil {
 		log.Fatal(err)
@@ -143,27 +147,44 @@ func sendAndRecvConcurrently(c *client.Client) (want, got int64, err error) {
 }
 
 func send(c *client.Client) (sum int64, err error) {
-	var b bytes.Buffer
+	sendStart := time.Now()
+	var networkTime time.Duration
+	var sentBytes int
 
-	for i := 0; i < maxN; i++ {
+	defer func() {
+		log.Printf(sendFmt, networkTime, time.Since(sendStart)-networkTime, float64(sentBytes)/1024/1024)
+	}()
+
+	buf := make([]byte, 0, maxBufferSize)
+
+	for i := 0; i <= maxN; i++ {
 		sum += int64(i)
-		fmt.Fprintf(&b, "%d\n", i)
 
-		if b.Len() >= maxBufferSize {
-			if err := c.Send(b.Bytes()); err != nil {
+		buf = strconv.AppendInt(buf, int64(i), 10)
+		buf = append(buf, '\n')
+
+		if len(buf) >= maxBufferSize {
+			start := time.Now()
+			if err := c.Send(buf); err != nil {
 				return 0, err
 			}
-			b.Reset()
+			networkTime += time.Since(start)
+			sentBytes += len(buf)
+
+			buf = buf[0:0]
 		}
 	}
-	// log.Printf("%d", b.Len())
-	if b.Len() > 0 {
-		if err := c.Send(b.Bytes()); err != nil {
+
+	if len(buf) != 0 {
+		start := time.Now()
+		if err := c.Send(buf); err != nil {
 			return 0, err
 		}
+		networkTime += time.Since(start)
+		sentBytes += len(buf)
 	}
-	return sum, nil
 
+	return sum, nil
 }
 func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)

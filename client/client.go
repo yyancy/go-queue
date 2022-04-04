@@ -40,7 +40,12 @@ func (c *Client) listChunks(addr string) ([]protocol.Chunk, error) {
 		log.Fatalf("ERR Connection error: %s\n", err)
 	}
 	var res []protocol.Chunk
-	if err := json.NewDecoder(bytes.NewReader(resp.Body())).Decode(&res); err != nil {
+	body := resp.Body()
+	b := make([]byte, len(body))
+	copy(b, body)
+
+	// log.Printf("buffer = %s, resp.body = %s", b, resp.Body())
+	if err := json.NewDecoder(bytes.NewReader(b)).Decode(&res); err != nil {
 		return nil, err
 	}
 	return res, nil
@@ -55,7 +60,7 @@ func (c *Client) Send(msg []byte) error {
 	readURL := c.addrs[addrIdx]
 	req := fasthttp.AcquireRequest()
 	req.SetRequestURI(fmt.Sprintf("%s/write", readURL))
-	req.Header.SetMethod(fasthttp.MethodGet)
+	req.Header.SetMethod(fasthttp.MethodPost)
 	req.SetBody(msg)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
@@ -63,7 +68,9 @@ func (c *Client) Send(msg []byte) error {
 	if err != nil {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
+		return err
 	}
+
 	// log.Printf("Send Response: %s\n", resp.Body())
 	fasthttp.ReleaseResponse(resp)
 	return nil
@@ -135,7 +142,9 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
 	}
-	b := resp.Body()
+	body := resp.Body()
+	b := make([]byte, len(body))
+	copy(b, body)
 	if len(b) == 0 {
 		if !c.curChunk.Complete {
 			if err := c.updateCurrentChunkCompleteStatus(readURL); err != nil {

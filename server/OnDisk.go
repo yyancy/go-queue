@@ -65,9 +65,7 @@ func (c *OnDisk) initLastChunkIdx() error {
 
 func (c *OnDisk) Send(msg []byte) error {
 	// time.Sleep(time.Millisecond * 100)
-	if len(msg) == 0 {
-		return errors.New("no content to send")
-	}
+
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if c.lastChunk == "" || (c.lastChunkSize+uint64(len(msg))) > maxFileChunkSize {
@@ -76,6 +74,7 @@ func (c *OnDisk) Send(msg []byte) error {
 		c.lastChunkIdx++
 	}
 	fp, err := c.getFileDecriptor(c.lastChunk, true)
+
 	if err != nil {
 		return err
 	}
@@ -105,10 +104,6 @@ func (c *OnDisk) getFileDecriptor(chunk string, write bool) (*os.File, error) {
 		return nil, fmt.Errorf("Could not create chunk file %q: %s", filename, err)
 	}
 
-	_, err = fp.Seek(0, io.SeekEnd)
-	if err != nil {
-		return nil, fmt.Errorf("seek file %q until the end: %v", fp.Name(), err)
-	}
 	c.fps[chunk] = fp
 	return fp, nil
 }
@@ -196,12 +191,15 @@ func (c *OnDisk) ListChunks() ([]protocol.Chunk, error) {
 		} else if err != nil {
 			return nil, fmt.Errorf("reading directory: %v", err)
 		}
-		c := protocol.Chunk{
+		c.writeMu.Lock()
+		ch := protocol.Chunk{
 			Name:     di.Name(),
 			Complete: (di.Name() != c.lastChunk),
 			Size:     uint64(fi.Size()),
 		}
-		res = append(res, c)
+		c.writeMu.Unlock()
+
+		res = append(res, ch)
 	}
 	// log.Printf("chunks %v", res)
 	return res, nil
