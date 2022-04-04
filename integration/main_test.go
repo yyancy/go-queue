@@ -24,8 +24,17 @@ const (
 	maxBufferSize = 1024 * 1024
 )
 
-func TestSimpleClientAndServer(t *testing.T) {
+func TestSimpleClientAndServerConcurently(t *testing.T) {
+	t.Parallel()
+	SimpleClientAndServerTest(t, true)
+}
+func TestSimpleClientAndServerSequentially(t *testing.T) {
+	t.Parallel()
+	SimpleClientAndServerTest(t, false)
+}
 
+func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
+	t.Helper()
 	p, err := freeport.GetFreePort()
 	if err != nil {
 		log.Fatal(err)
@@ -67,10 +76,25 @@ func TestSimpleClientAndServer(t *testing.T) {
 	log.Printf("Starting the test")
 
 	c, _ := client.NewClient([]string{"http://127.0.0.1:" + fmt.Sprint(port)})
+	var want, got int64
+	if concurrent {
 
-	want, got, err := sendAndRecvConcurrently(c)
-	if err != nil {
-		t.Fatalf("sendAndRecvConcurrently(): %v", err)
+		want, got, err = sendAndRecvConcurrently(c)
+		if err != nil {
+			t.Fatalf("sendAndRecvConcurrently(): %v", err)
+		}
+	} else {
+		want, err = send(c)
+		if err != nil {
+			t.Fatalf("send failed: %v", err)
+		}
+		ch := make(chan bool, 1)
+		ch <- true
+		got, err = recv(c, ch)
+		if err != nil {
+			t.Fatalf("recv failed: %v", err)
+		}
+
 	}
 	want += 12345
 	if want != got {

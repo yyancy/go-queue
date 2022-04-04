@@ -2,13 +2,14 @@ package web
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
 
 	"github.com/valyala/fasthttp"
-	"github.com/yyancy/go-queue/server"
+	"github.com/yyancy/go-queue/protocol"
 )
 
 const defaultBufferSize = 512 * 1024
@@ -22,8 +23,8 @@ type Web struct {
 type Storage interface {
 	Send(msg []byte) error
 	Recv(chunk string, off uint, maxSize uint, w io.Writer) error
-	Ack(chunk string) error
-	ListChunks() ([]server.Chunk, error)
+	Ack(chunk string, size uint64) error
+	ListChunks() ([]protocol.Chunk, error)
 }
 
 func NewWeb(s Storage, addrs []string, port uint) (w *Web, err error) {
@@ -33,7 +34,7 @@ func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	if err != io.EOF {
 		ctx.SetStatusCode(http.StatusInternalServerError)
 		ctx.WriteString("internal server error:" + err.Error())
-		log.Printf("internal server error:" + err.Error())
+		// log.Printf("internal server error:" + err.Error())
 		// debug.PrintStack()
 	}
 }
@@ -77,8 +78,17 @@ func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
 
 func (w *Web) ackHandler(ctx *fasthttp.RequestCtx) {
 	chunk := ctx.QueryArgs().Peek("chunk")
+	if len(chunk) == 0 {
+		w.errorHandler(errors.New("not found `chunk` param"), ctx)
+		return
+	}
+	size, err := ctx.QueryArgs().GetUint("size")
+	if err != nil {
+		w.errorHandler(errors.New("not found `size` param"), ctx)
+		return
+	}
 	// log.Printf("ack(): recieved chunk=`%s`", chunk)
-	if err := w.server.Ack(string(chunk)); err != nil {
+	if err := w.server.Ack(string(chunk), uint64(size)); err != nil {
 		ctx.SetStatusCode(fasthttp.StatusInternalServerError)
 		ctx.WriteString(err.Error())
 	} else {

@@ -10,7 +10,7 @@ import (
 	"math/rand"
 
 	"github.com/valyala/fasthttp"
-	"github.com/yyancy/go-queue/server"
+	"github.com/yyancy/go-queue/protocol"
 )
 
 const defaultBufferSize = 64 * 1024
@@ -19,7 +19,7 @@ type Client struct {
 	addrs    []string
 	c        *fasthttp.Client
 	off      uint
-	curChunk server.Chunk
+	curChunk protocol.Chunk
 }
 
 func NewClient(addrs []string) (*Client, error) {
@@ -27,7 +27,7 @@ func NewClient(addrs []string) (*Client, error) {
 		c: &fasthttp.Client{}}, nil
 }
 
-func (c *Client) listChunks(addr string) ([]server.Chunk, error) {
+func (c *Client) listChunks(addr string) ([]protocol.Chunk, error) {
 	req := fasthttp.AcquireRequest()
 	req.SetRequestURI(addr + "/listChunks")
 	req.Header.SetMethod(fasthttp.MethodGet)
@@ -39,7 +39,7 @@ func (c *Client) listChunks(addr string) ([]server.Chunk, error) {
 		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
 	}
-	var res []server.Chunk
+	var res []protocol.Chunk
 	if err := json.NewDecoder(bytes.NewReader(resp.Body())).Decode(&res); err != nil {
 		return nil, err
 	}
@@ -148,7 +148,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 		if err := c.ackCurrentChunk(readURL); err != nil {
 			return nil, fmt.Errorf("ack current chunk %w:", err)
 		}
-		c.curChunk = server.Chunk{}
+		c.curChunk = protocol.Chunk{}
 		c.off = 0
 		return c.Recv(buf)
 
@@ -163,7 +163,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 func (c *Client) ackCurrentChunk(addr string) error {
 	req := fasthttp.AcquireRequest()
 	// log.Printf("curChunk=%q", c.curChunk)
-	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s", c.curChunk.Name))
+	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s&size=%d", c.curChunk.Name, c.off))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
