@@ -64,6 +64,7 @@ func TestGetFileDescriptor(t *testing.T) {
 				t.Fatalf("wanted error, got not error")
 			} else if !tc.wantErr && err != nil {
 				t.Fatalf("want no error, got err %v", err)
+
 			}
 		})
 	}
