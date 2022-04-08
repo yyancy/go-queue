@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -38,25 +39,57 @@ func TestSimpleClientAndServerSequentially(t *testing.T) {
 
 func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 	t.Helper()
+	etcdPort, err := freeport.GetFreePort()
+	if err != nil {
+		log.Fatal(err)
+	}
+	etcdPeerPort, err := freeport.GetFreePort()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	p, err := freeport.GetFreePort()
 	if err != nil {
 		log.Fatal(err)
 	}
 	port := uint(p)
+	etcdPath, err := os.MkdirTemp(os.TempDir(), "etcd")
+	if err != nil {
+		t.Fatalf("MkdirTemp failed: %v", err)
+	}
 	dbPath, err := os.MkdirTemp(os.TempDir(), "go-queue")
 	if err != nil {
 		t.Fatalf("MkdirTemp failed: %v", err)
 	}
-	os.RemoveAll(dbPath)
+	t.Cleanup(func() { os.RemoveAll(dbPath) })
+	t.Cleanup(func() { os.RemoveAll(etcdPath) })
+
 	os.Mkdir(dbPath, 0777)
 
-	ioutil.WriteFile(filepath.Join(dbPath, "chunk1"), []byte("12345\n"), 0666)
+	categoryPath := filepath.Join(dbPath, "numbers")
+	os.Mkdir(categoryPath, 0777)
+	ioutil.WriteFile(filepath.Join(categoryPath, "chunk1"), []byte("12345\n"), 0666)
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- InitAndServe(dbPath, port)
+		errCh <- InitAndServe(fmt.Sprintf("http://localhost:%d", etcdPort), dbPath, port)
 	}()
+	etcdArgs := []string{
+		"--data-dir", etcdPath,
+		"--listen-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
+		"--advertise-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
+		"--listen-peer-urls", fmt.Sprintf("http://localhost:%d", etcdPeerPort),
+	}
+
+	log.Printf("Running `etcd` %s", strings.Join(etcdArgs, " "))
+
+	cmd := exec.Command("etcd",
+		etcdArgs...,
+	)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("could not run etcd: %v", err)
+	}
+	t.Cleanup(func() { cmd.Process.Kill() })
 
 	log.Printf("Waiting for the port 127.0.0.1:%d to open", port)
 	for i := 0; i <= 100; i++ {
@@ -165,7 +198,7 @@ func send(c *client.Client) (sum int64, err error) {
 
 		if len(buf) >= maxBufferSize {
 			start := time.Now()
-			if err := c.Send(buf); err != nil {
+			if err := c.Send("numbers", buf); err != nil {
 				return 0, err
 			}
 			networkTime += time.Since(start)
@@ -177,7 +210,7 @@ func send(c *client.Client) (sum int64, err error) {
 
 	if len(buf) != 0 {
 		start := time.Now()
-		if err := c.Send(buf); err != nil {
+		if err := c.Send("numbers", buf); err != nil {
 			return 0, err
 		}
 		networkTime += time.Since(start)
@@ -186,20 +219,46 @@ func send(c *client.Client) (sum int64, err error) {
 
 	return sum, nil
 }
+
+var errTmpRandom = errors.New("random error tests")
+
 func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)
 	sum = 0
 	sendFinished := false
+	longCtn := 0
 	for {
+		longCtn++
 		select {
 		case <-completeCh:
 			// log.Printf("Receive: got information that send finished")
 			sendFinished = true
 		default:
 		}
-		res, err := c.Recv(buf)
-		if errors.Is(err, io.EOF) {
-			// log.Printf("EOF happened")
+		err := c.Process("numbers", buf, func(res []byte) error {
+			if longCtn%10 == 0 {
+				return errTmpRandom
+			}
+			ints := strings.Split(string(res), "\n")
+			for _, i := range ints {
+				if i == "" {
+					continue
+				}
+				i, err := strconv.Atoi(i)
+				if err != nil {
+					return err
+				}
+				// if idx < 2 {
+				// 	log.Printf("recived number=%d", i)
+				// }
+				sum += int64(i)
+			}
+
+			return nil
+		})
+		if errors.Is(err, errTmpRandom) {
+			continue
+		} else if errors.Is(err, io.EOF) {
 			if sendFinished {
 				return sum, nil
 			}
@@ -207,21 +266,6 @@ func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
 			continue
 		} else if err != nil {
 			return 0, err
-		}
-		// log.Printf("received %s", res)
-		ints := strings.Split(string(res), "\n")
-		for _, ish := range ints {
-			if ish == "" {
-				continue
-			}
-			i, err := strconv.Atoi(ish)
-			if err != nil {
-				return 0, err
-			}
-			// if idx < 2 {
-			// 	log.Printf("recived number=%d", i)
-			// }
-			sum += int64(i)
 		}
 	}
 

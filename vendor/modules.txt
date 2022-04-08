@@ -1,5 +1,11 @@
 # github.com/andybalholm/brotli v1.0.4
 github.com/andybalholm/brotli
+# github.com/coreos/etcd v2.3.8+incompatible
+## explicit
+github.com/coreos/etcd/Godeps/_workspace/src/github.com/ugorji/go/codec
+github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context
+github.com/coreos/etcd/pkg/pathutil
+github.com/coreos/etcd/pkg/types
 # github.com/klauspost/compress v1.15.0
 github.com/klauspost/compress/flate
 github.com/klauspost/compress/gzip
@@ -14,3 +20,6 @@ github.com/valyala/bytebufferpool
 github.com/valyala/fasthttp
 github.com/valyala/fasthttp/fasthttputil
 github.com/valyala/fasthttp/stackless
+# go.etcd.io/etcd v2.3.8+incompatible
+## explicit
+go.etcd.io/etcd/client

@@ -8,6 +8,8 @@ import (
 	"io"
 	"log"
 	"math/rand"
+	"net/url"
+	"strconv"
 
 	"github.com/valyala/fasthttp"
 	"github.com/yyancy/go-queue/protocol"
@@ -27,9 +29,11 @@ func NewClient(addrs []string) (*Client, error) {
 		c: &fasthttp.Client{}}, nil
 }
 
-func (c *Client) listChunks(addr string) ([]protocol.Chunk, error) {
+func (c *Client) listChunks(category, addr string) ([]protocol.Chunk, error) {
 	req := fasthttp.AcquireRequest()
-	req.SetRequestURI(addr + "/listChunks")
+	u := url.Values{}
+	u.Add("category", category)
+	req.SetRequestURI(addr + "/listChunks?" + u.Encode())
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
@@ -51,15 +55,17 @@ func (c *Client) listChunks(addr string) ([]protocol.Chunk, error) {
 	return res, nil
 }
 
-func (c *Client) Send(msg []byte) error {
+func (c *Client) Send(category string, msg []byte) error {
 	if len(msg) == 0 {
 		return errors.New("no content to send")
 	}
 	// _, err := c.buf.Write(msg)
 	addrIdx := rand.Intn(len(c.addrs))
 	readURL := c.addrs[addrIdx]
+	u := url.Values{}
+	u.Add("category", category)
 	req := fasthttp.AcquireRequest()
-	req.SetRequestURI(fmt.Sprintf("%s/write", readURL))
+	req.SetRequestURI(fmt.Sprintf("%s/write?%s", readURL, u.Encode()))
 	req.Header.SetMethod(fasthttp.MethodPost)
 	req.SetBody(msg)
 	resp := fasthttp.AcquireResponse()
@@ -76,12 +82,12 @@ func (c *Client) Send(msg []byte) error {
 	return nil
 }
 
-func (c *Client) updateCurrentChunk(addr string) error {
+func (c *Client) updateCurrentChunk(category, addr string) error {
 	if c.curChunk.Name != "" {
 		return nil
 	}
 	// log.Printf("updateCurrentChunk %s", addr)
-	chunks, err := c.listChunks(addr)
+	chunks, err := c.listChunks(category, addr)
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)
@@ -102,8 +108,8 @@ func (c *Client) updateCurrentChunk(addr string) error {
 	return nil
 }
 
-func (c *Client) updateCurrentChunkCompleteStatus(addr string) error {
-	chunks, err := c.listChunks(addr)
+func (c *Client) updateCurrentChunkCompleteStatus(category, addr string) error {
+	chunks, err := c.listChunks(category, addr)
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)
@@ -119,7 +125,7 @@ func (c *Client) updateCurrentChunkCompleteStatus(addr string) error {
 	}
 	return nil
 }
-func (c *Client) Recv(buf []byte) ([]byte, error) {
+func (c *Client) Process(category string, buf []byte, processFn func([]byte) error) error {
 	if buf == nil {
 		buf = make([]byte, defaultBufferSize)
 	}
@@ -127,11 +133,15 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	addrIdx := rand.Intn(len(c.addrs))
 	readURL := c.addrs[addrIdx]
 
-	if err := c.updateCurrentChunk(readURL); err != nil {
-		return nil, fmt.Errorf("updateCurrentChunk %w", err)
+	if err := c.updateCurrentChunk(category, readURL); err != nil {
+		return fmt.Errorf("updateCurrentChunk %w", err)
 	}
-
-	addr := fmt.Sprintf("%s/read?off=%d&maxSize=%d&chunk=%s", readURL, c.off, uint(len(buf)), c.curChunk.Name)
+	u := url.Values{}
+	u.Add("off", strconv.Itoa(int(c.off)))
+	u.Add("maxSize", strconv.Itoa(len(buf)))
+	u.Add("chunk", c.curChunk.Name)
+	u.Add("category", category)
+	addr := fmt.Sprintf("%s/read?%s", readURL, u.Encode())
 	req.SetRequestURI(addr)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
@@ -147,32 +157,39 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 	copy(b, body)
 	if len(b) == 0 {
 		if !c.curChunk.Complete {
-			if err := c.updateCurrentChunkCompleteStatus(readURL); err != nil {
-				return nil, fmt.Errorf("updateCurrentChunkCompleteStatus(%s) failed %v", addr, err)
+			if err := c.updateCurrentChunkCompleteStatus(category, readURL); err != nil {
+				return fmt.Errorf("updateCurrentChunkCompleteStatus(%s) failed %v", addr, err)
 			}
 		}
 		if !c.curChunk.Complete {
-			return nil, io.EOF
+			return io.EOF
 		}
-		if err := c.ackCurrentChunk(readURL); err != nil {
-			return nil, fmt.Errorf("ack current chunk %w:", err)
+		if err := c.ackCurrentChunk(category, readURL); err != nil {
+			return fmt.Errorf("ack current chunk %w:", err)
 		}
 		c.curChunk = protocol.Chunk{}
 		c.off = 0
-		return c.Recv(buf)
+		return c.Process(category, buf, processFn)
 
 	}
-	c.off += uint(len(b))
-	// log.Printf("Send Response: %s\n", b)
+	if err := processFn(b); err == nil {
+		c.off += uint(len(b))
+	}
+
 	fasthttp.ReleaseResponse(resp)
 
-	return b, nil
+	return nil
 }
 
-func (c *Client) ackCurrentChunk(addr string) error {
+func (c *Client) ackCurrentChunk(category, addr string) error {
 	req := fasthttp.AcquireRequest()
 	// log.Printf("curChunk=%q", c.curChunk)
-	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s&size=%d", c.curChunk.Name, c.off))
+
+	u := url.Values{}
+	u.Add("chunk", c.curChunk.Name)
+	u.Add("size", strconv.Itoa(int(c.off)))
+	u.Add("category", category)
+	req.SetRequestURI(fmt.Sprintf(addr+"/ack?%s", u.Encode()))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)
