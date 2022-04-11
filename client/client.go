@@ -65,20 +65,24 @@ func (c *Client) Send(category string, msg []byte) error {
 	u := url.Values{}
 	u.Add("category", category)
 	req := fasthttp.AcquireRequest()
+	defer fasthttp.ReleaseRequest(req)
 	req.SetRequestURI(fmt.Sprintf("%s/write?%s", readURL, u.Encode()))
 	req.Header.SetMethod(fasthttp.MethodPost)
 	req.SetBody(msg)
 	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
 	err := c.c.Do(req, resp)
-	fasthttp.ReleaseRequest(req)
 	if err != nil {
-		fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
 		return err
 	}
 
+	if resp.StatusCode() != fasthttp.StatusOK {
+		var b bytes.Buffer
+		io.Copy(&b, bytes.NewReader(resp.Body()))
+		return fmt.Errorf("http code %d, %s", resp.StatusCode(), b.String())
+	}
 	// log.Printf("Send Response: %s\n", resp.Body())
-	fasthttp.ReleaseResponse(resp)
 	return nil
 }
 
@@ -145,12 +149,18 @@ func (c *Client) Process(category string, buf []byte, processFn func([]byte) err
 	req.SetRequestURI(addr)
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
+	defer fasthttp.ReleaseResponse(resp)
 	err := c.c.Do(req, resp)
+	if err != nil {
+		return fmt.Errorf("read %q: %v", readURL, err)
+	}
 	fasthttp.ReleaseRequest(req)
 
-	if err != nil {
-		fasthttp.ReleaseResponse(resp)
-		log.Fatalf("ERR Connection error: %s\n", err)
+	if resp.StatusCode() != fasthttp.StatusOK {
+		var b bytes.Buffer
+		r := bytes.NewReader(resp.Body())
+		io.Copy(&b, r)
+		return fmt.Errorf("http code %d, %s", resp.StatusCode(), b.String())
 	}
 	body := resp.Body()
 	b := make([]byte, len(body))
@@ -175,8 +185,6 @@ func (c *Client) Process(category string, buf []byte, processFn func([]byte) err
 	if err := processFn(b); err == nil {
 		c.off += uint(len(b))
 	}
-
-	fasthttp.ReleaseResponse(resp)
 
 	return nil
 }

@@ -2,10 +2,28 @@
 github.com/andybalholm/brotli
 # github.com/coreos/etcd v2.3.8+incompatible
 ## explicit
-github.com/coreos/etcd/Godeps/_workspace/src/github.com/ugorji/go/codec
+github.com/coreos/etcd/Godeps/_workspace/src/github.com/gogo/protobuf/proto
+github.com/coreos/etcd/Godeps/_workspace/src/github.com/golang/protobuf/proto
 github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/context
-github.com/coreos/etcd/pkg/pathutil
-github.com/coreos/etcd/pkg/types
+github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/http2
+github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/http2/hpack
+github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/internal/timeseries
+github.com/coreos/etcd/Godeps/_workspace/src/golang.org/x/net/trace
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/codes
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/credentials
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/grpclog
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/metadata
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/naming
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/peer
+github.com/coreos/etcd/Godeps/_workspace/src/google.golang.org/grpc/transport
+github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes
+github.com/coreos/etcd/etcdserver/etcdserverpb
+github.com/coreos/etcd/storage/storagepb
+# github.com/gogo/protobuf v1.3.2
+## explicit
+# github.com/golang/protobuf v1.5.2
+## explicit
 # github.com/klauspost/compress v1.15.0
 github.com/klauspost/compress/flate
 github.com/klauspost/compress/gzip
@@ -22,4 +40,4 @@ github.com/valyala/fasthttp/fasthttputil
 github.com/valyala/fasthttp/stackless
 # go.etcd.io/etcd v2.3.8+incompatible
 ## explicit
-go.etcd.io/etcd/client
+go.etcd.io/etcd/clientv3

@@ -2,13 +2,16 @@ package server
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strconv"
+	"strings"
 	"sync"
 
 	"github.com/yyancy/go-queue/protocol"
@@ -19,21 +22,35 @@ const maxFileChunkSize = 20 * 1024 * 1024
 
 var errSmallBuffer = errors.New("too small buffer")
 
+type StorageHooks interface {
+	BeforeCreatingChunk(ctx context.Context, category, filename string) error
+}
+
 type OnDisk struct {
-	dirname string
+	dirname      string
+	instanceName string
+	category     string
+	repl         StorageHooks
 
 	writeMu       sync.Mutex
 	lastChunk     string
 	lastChunkSize uint64
 	lastChunkIdx  uint64
-	fpsMu         sync.Mutex
-	fps           map[string]*os.File
+
+	fpsMu sync.Mutex
+	fps   map[string]*os.File
 }
 
 var filenameRegexp = regexp.MustCompile("^chunk([0-9]+)$")
 
-func NewOnDisk(dirname string) (*OnDisk, error) {
-	s := &OnDisk{dirname: dirname, fps: make(map[string]*os.File)}
+func NewOnDisk(dirname string, category string, instanceName string, repl StorageHooks) (*OnDisk, error) {
+	s := &OnDisk{
+		dirname:      dirname,
+		category:     category,
+		repl:         repl,
+		instanceName: instanceName,
+		fps:          make(map[string]*os.File),
+	}
 
 	if err := s.initLastChunkIdx(); err != nil {
 		return nil, err
@@ -45,9 +62,14 @@ func (c *OnDisk) initLastChunkIdx() error {
 	if err != nil {
 		return fmt.Errorf("ReadDir: %v", err)
 	}
+	prefix := c.instanceName + "-"
 	// find the existing maximum index of chunks
 	for _, file := range files {
-		res := filenameRegexp.FindStringSubmatch(file.Name())
+		if !strings.HasPrefix(file.Name(), prefix) {
+			continue
+		}
+
+		res := filenameRegexp.FindStringSubmatch(strings.TrimPrefix(file.Name(), prefix))
 		if res == nil {
 			continue
 		}
@@ -63,15 +85,20 @@ func (c *OnDisk) initLastChunkIdx() error {
 	return err
 }
 
-func (c *OnDisk) Send(msg []byte) error {
+func (c *OnDisk) Send(ctx context.Context, msg []byte) error {
 	// time.Sleep(time.Millisecond * 100)
 
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
 	if c.lastChunk == "" || (c.lastChunkSize+uint64(len(msg))) > maxFileChunkSize {
-		c.lastChunk = fmt.Sprintf("chunk%d", c.lastChunkIdx)
+		c.lastChunk = fmt.Sprintf("%s-chunk%d", c.instanceName, c.lastChunkIdx)
 		c.lastChunkSize = 0
 		c.lastChunkIdx++
+
+		if err := c.repl.BeforeCreatingChunk(ctx, c.category, c.lastChunk); err != nil {
+			log.Printf("found err %v", err)
+			return fmt.Errorf("before creating new chunk: %w", err)
+		}
 	}
 	fp, err := c.getFileDecriptor(c.lastChunk, true)
 

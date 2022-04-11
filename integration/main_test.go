@@ -39,103 +39,108 @@ func TestSimpleClientAndServerSequentially(t *testing.T) {
 
 func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 	t.Helper()
-	etcdPort, err := freeport.GetFreePort()
-	if err != nil {
-		log.Fatal(err)
-	}
+
+	log.SetFlags(log.Flags() | log.Lmicroseconds)
+
 	etcdPeerPort, err := freeport.GetFreePort()
 	if err != nil {
-		log.Fatal(err)
+		t.Fatalf("Failed to get free port for etcd peer: %v", err)
 	}
 
-	p, err := freeport.GetFreePort()
+	etcdPort, err := freeport.GetFreePort()
 	if err != nil {
-		log.Fatal(err)
+		t.Fatalf("Failed to get free port for etcd: %v", err)
 	}
-	port := uint(p)
+
+	port, err := freeport.GetFreePort()
+	if err != nil {
+		t.Fatalf("Failed to get free port: %v", err)
+	}
+
 	etcdPath, err := os.MkdirTemp(os.TempDir(), "etcd")
 	if err != nil {
-		t.Fatalf("MkdirTemp failed: %v", err)
+		t.Fatalf("Failed to create temp dir for etcd: %v", err)
 	}
+
 	dbPath, err := os.MkdirTemp(os.TempDir(), "go-queue")
 	if err != nil {
-		t.Fatalf("MkdirTemp failed: %v", err)
+		t.Fatalf("Failed to create temp dir: %v", err)
 	}
+
 	t.Cleanup(func() { os.RemoveAll(dbPath) })
 	t.Cleanup(func() { os.RemoveAll(etcdPath) })
 
-	os.Mkdir(dbPath, 0777)
-
 	categoryPath := filepath.Join(dbPath, "numbers")
-	os.Mkdir(categoryPath, 0777)
-	ioutil.WriteFile(filepath.Join(categoryPath, "chunk1"), []byte("12345\n"), 0666)
+	os.MkdirAll(categoryPath, 0777)
+
+	// Initialise the database contents with
+	// a not easy-to-guess contents that must
+	// be preserved when writing to this directory.
+	ioutil.WriteFile(filepath.Join(categoryPath, fmt.Sprintf("moscow-chunk%09d", 1)), []byte("12345\n"), 0666)
+
+	etcdArgs := []string{"--data-dir", etcdPath,
+		"--listen-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
+		"--advertise-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
+		"--listen-peer-urls", fmt.Sprintf("http://localhost:%d", etcdPeerPort)}
+
+	log.Printf("Running `etcd %s`", strings.Join(etcdArgs, " "))
+
+	cmd := exec.Command("etcd", etcdArgs...)
+	if err := cmd.Start(); err != nil {
+		t.Fatalf("Could not run etcd: %v", err)
+	}
+
+	t.Cleanup(func() { cmd.Process.Kill() })
+
+	log.Printf("Waiting for the etcd port localhost:%d to open", etcdPort)
+
+	waitForPort(t, etcdPort, make(chan error, 1))
+
+	log.Printf("Running chukcha on port %d", port)
 
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- InitAndServe(fmt.Sprintf("http://localhost:%d", etcdPort), dbPath, port)
+		errCh <- InitAndServe(
+			fmt.Sprintf("localhost:%d", etcdPort),
+			"moscow",
+			dbPath,
+			fmt.Sprintf("localhost:%d", port),
+		)
 	}()
-	etcdArgs := []string{
-		"--data-dir", etcdPath,
-		"--listen-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
-		"--advertise-client-urls", fmt.Sprintf("http://localhost:%d", etcdPort),
-		"--listen-peer-urls", fmt.Sprintf("http://localhost:%d", etcdPeerPort),
-	}
 
-	log.Printf("Running `etcd` %s", strings.Join(etcdArgs, " "))
+	log.Printf("Waiting for the Chukcha port localhost:%d to open", port)
+	waitForPort(t, port, make(chan error, 1))
 
-	cmd := exec.Command("etcd",
-		etcdArgs...,
-	)
-	if err := cmd.Start(); err != nil {
-		t.Fatalf("could not run etcd: %v", err)
-	}
-	t.Cleanup(func() { cmd.Process.Kill() })
-
-	log.Printf("Waiting for the port 127.0.0.1:%d to open", port)
-	for i := 0; i <= 100; i++ {
-		select {
-		case err := <-errCh:
-			if err != nil {
-				t.Fatalf("InitAndServe(%s, %d): %v", dbPath, port, err)
-			}
-		default:
-		}
-
-		timeout := time.Millisecond * 50
-		conn, err := net.DialTimeout("tcp", net.JoinHostPort("127.0.0.1", fmt.Sprint(port)), timeout)
-		if err != nil {
-			time.Sleep(timeout)
-			continue
-		}
-		conn.Close()
-		break
-	}
 	log.Printf("Starting the test")
 
-	c, _ := client.NewClient([]string{"http://127.0.0.1:" + fmt.Sprint(port)})
-	var want, got int64
-	if concurrent {
+	s, _ := client.NewClient([]string{fmt.Sprintf("http://localhost:%d", port)})
 
-		want, got, err = sendAndRecvConcurrently(c)
+	var want, got int64
+
+	if concurrent {
+		want, got, err = sendAndRecvConcurrently(s)
 		if err != nil {
-			t.Fatalf("sendAndRecvConcurrently(): %v", err)
+			t.Fatalf("sendAndReceiveConcurrently: %v", err)
 		}
 	} else {
-		want, err = send(c)
+		want, err = send(s)
 		if err != nil {
-			t.Fatalf("send failed: %v", err)
-		}
-		ch := make(chan bool, 1)
-		ch <- true
-		got, err = recv(c, ch)
-		if err != nil {
-			t.Fatalf("recv failed: %v", err)
+			t.Fatalf("send error: %v", err)
 		}
 
+		sendFinishedCh := make(chan bool, 1)
+		sendFinishedCh <- true
+		got, err = recv(s, sendFinishedCh)
+		if err != nil {
+			t.Fatalf("receive error: %v", err)
+		}
 	}
+
+	// The contents of the chunk that already existed.
 	want += 12345
+
 	if want != got {
-		t.Fatalf("The expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
+		t.Errorf("the expected sum %d is not equal to the actual sum %d (delivered %1.f%%)", want, got, (float64(got)/float64(want))*100)
 	}
 }
 
@@ -269,4 +274,27 @@ func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
 		}
 	}
 
+}
+
+func waitForPort(t *testing.T, port int, errCh chan error) {
+	t.Helper()
+
+	for i := 0; i <= 100; i++ {
+		select {
+		case err := <-errCh:
+			if err != nil {
+				t.Fatalf("InitAndServe failed: %v", err)
+			}
+		default:
+		}
+
+		timeout := time.Millisecond * 50
+		conn, err := net.DialTimeout("tcp", net.JoinHostPort("localhost", fmt.Sprint(port)), timeout)
+		if err != nil {
+			time.Sleep(timeout)
+			continue
+		}
+		conn.Close()
+		break
+	}
 }

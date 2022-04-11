@@ -13,35 +13,44 @@ import (
 	"sync"
 
 	"github.com/valyala/fasthttp"
-	"github.com/yyancy/go-queue/protocol"
 	"github.com/yyancy/go-queue/server"
-	"go.etcd.io/etcd/client"
+	"github.com/yyancy/go-queue/server/replication"
+	"go.etcd.io/etcd/clientv3"
 )
 
 const defaultBufferSize = 512 * 1024
 
 type Web struct {
-	port     uint
-	dirname  string
-	kapi     client.KeysAPI
+	etcd         *clientv3.Client
+	instanceName string
+	dirname      string
+	listenAddr   string
+	replStorage  *replication.Storage
+
 	m        sync.Mutex
 	storages map[string]*server.OnDisk
 }
 
-type Storage interface {
-	Send(msg []byte) error
-	Recv(chunk string, off uint, maxSize uint, w io.Writer) error
-	Ack(chunk string, size uint64) error
-	ListChunks() ([]protocol.Chunk, error)
-}
+// type Storage interface {
+// 	Send(msg []byte) error
+// 	Recv(chunk string, off uint, maxSize uint, w io.Writer) error
+// 	Ack(chunk string, size uint64) error
+// 	ListChunks() ([]protocol.Chunk, error)
+// }
 
-func NewWeb(kapi client.KeysAPI, dirname string, port uint) (w *Web, err error) {
+func NewWeb(
+	cli *clientv3.Client,
+	instanceName, dirname string,
+	listenAddr string,
+	replStorage *replication.Storage,
+) (w *Web) {
 	return &Web{
-			kapi:     kapi,
-			dirname:  dirname,
-			port:     port,
-			storages: make(map[string]*server.OnDisk)},
-		nil
+		etcd:         cli,
+		replStorage:  replStorage,
+		instanceName: instanceName,
+		dirname:      dirname,
+		listenAddr:   listenAddr,
+		storages:     make(map[string]*server.OnDisk)}
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
 	if err != io.EOF {
@@ -80,7 +89,7 @@ func (w *Web) getStorageByCategory(category string) (*server.OnDisk, error) {
 	if err := os.MkdirAll(dir, 0777); err != nil {
 		return nil, fmt.Errorf("creating directory for the category: %v", err)
 	}
-	storage, err := server.NewOnDisk(dir)
+	storage, err := server.NewOnDisk(dir, category, w.instanceName, w.replStorage)
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +129,10 @@ func (w *Web) writeHandler(ctx *fasthttp.RequestCtx) {
 	}
 	b := ctx.PostBody()
 	// log.Printf("write(): recieved %q", string(b))
-	err = storage.Send(b)
+	err = storage.Send(ctx, b)
 	if err != nil {
 		w.errorHandler(err, ctx)
+		return
 	}
 	ctx.WriteString("successful\n")
 }
@@ -138,6 +148,7 @@ func (w *Web) listChunksHandler(ctx *fasthttp.RequestCtx) {
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		w.errorHandler(err, ctx)
+		return
 	}
 	json.NewEncoder(ctx).Encode(chunks)
 }
@@ -181,7 +192,7 @@ func (w *Web) httpHander(ctx *fasthttp.RequestCtx) {
 }
 func (w *Web) Serve() error {
 
-	log.Printf("The server is running at %d port", w.port)
-	err := fasthttp.ListenAndServe("localhost:"+fmt.Sprint(w.port), w.httpHander)
+	log.Printf("The server is running at %s port", w.listenAddr)
+	err := fasthttp.ListenAndServe(w.listenAddr, w.httpHander)
 	return err
 }
