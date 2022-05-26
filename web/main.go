@@ -15,17 +15,17 @@ import (
 	"github.com/valyala/fasthttp"
 	"github.com/yyancy/go-queue/server"
 	"github.com/yyancy/go-queue/server/replication"
-	"go.etcd.io/etcd/clientv3"
 )
 
 const defaultBufferSize = 512 * 1024
 
 type Web struct {
-	etcd         *clientv3.Client
 	instanceName string
 	dirname      string
 	listenAddr   string
-	replStorage  *replication.Storage
+
+	replClient  *replication.Client
+	replStorage *replication.Storage
 
 	m        sync.Mutex
 	storages map[string]*server.OnDisk
@@ -39,17 +39,17 @@ type Web struct {
 // }
 
 func NewWeb(
-	cli *clientv3.Client,
+	replClient *replication.Client,
 	instanceName, dirname string,
 	listenAddr string,
 	replStorage *replication.Storage,
 ) (w *Web) {
 	return &Web{
-		etcd:         cli,
 		replStorage:  replStorage,
 		instanceName: instanceName,
-		dirname:      dirname,
 		listenAddr:   listenAddr,
+		replClient:   replClient,
+		dirname:      dirname,
 		storages:     make(map[string]*server.OnDisk)}
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
