@@ -3,11 +3,9 @@ package web
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -24,12 +22,14 @@ type Web struct {
 	dirname      string
 	listenAddr   string
 
-	replClient  *replication.Client
+	replClient  *replication.State
 	replStorage *replication.Storage
-
-	m        sync.Mutex
-	storages map[string]*server.OnDisk
+	getOnDisk   GetOnDiskFn
+	m           sync.Mutex
+	storages    map[string]*server.OnDisk
 }
+
+type GetOnDiskFn func(category string) (*server.OnDisk, error)
 
 // type Storage interface {
 // 	Send(msg []byte) error
@@ -39,10 +39,11 @@ type Web struct {
 // }
 
 func NewWeb(
-	replClient *replication.Client,
+	replClient *replication.State,
 	instanceName, dirname string,
 	listenAddr string,
 	replStorage *replication.Storage,
+	getOnDisk GetOnDiskFn,
 ) (w *Web) {
 	return &Web{
 		replStorage:  replStorage,
@@ -50,6 +51,7 @@ func NewWeb(
 		listenAddr:   listenAddr,
 		replClient:   replClient,
 		dirname:      dirname,
+		getOnDisk:    getOnDisk,
 		storages:     make(map[string]*server.OnDisk)}
 }
 func (w *Web) errorHandler(err error, ctx *fasthttp.RequestCtx) {
@@ -78,23 +80,7 @@ func (w *Web) getStorageByCategory(category string) (*server.OnDisk, error) {
 	if !isValidCategory(category) {
 		return nil, errors.New("Invalid category: " + category)
 	}
-	w.m.Lock()
-	defer w.m.Unlock()
-
-	storage, ok := w.storages[category]
-	if ok {
-		return storage, nil
-	}
-	dir := filepath.Join(w.dirname, category)
-	if err := os.MkdirAll(dir, 0777); err != nil {
-		return nil, fmt.Errorf("creating directory for the category: %v", err)
-	}
-	storage, err := server.NewOnDisk(dir, category, w.instanceName, w.replStorage)
-	if err != nil {
-		return nil, err
-	}
-	w.storages[category] = storage
-	return storage, nil
+	return w.getOnDisk(category)
 }
 
 func (w *Web) readHandler(ctx *fasthttp.RequestCtx) {

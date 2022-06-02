@@ -29,7 +29,9 @@ func NewClient(addrs []string) (*Client, error) {
 		c: &fasthttp.Client{}}, nil
 }
 
-func (c *Client) listChunks(category, addr string) ([]protocol.Chunk, error) {
+// ListChunks return the list of chunks for the appropriate
+// TODO extract
+func (c *Client) ListChunks(category, addr string) ([]protocol.Chunk, error) {
 	req := fasthttp.AcquireRequest()
 	u := url.Values{}
 	u.Add("category", category)
@@ -91,7 +93,7 @@ func (c *Client) updateCurrentChunk(category, addr string) error {
 		return nil
 	}
 	// log.Printf("updateCurrentChunk %s", addr)
-	chunks, err := c.listChunks(category, addr)
+	chunks, err := c.ListChunks(category, addr)
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)
@@ -113,7 +115,7 @@ func (c *Client) updateCurrentChunk(category, addr string) error {
 }
 
 func (c *Client) updateCurrentChunkCompleteStatus(category, addr string) error {
-	chunks, err := c.listChunks(category, addr)
+	chunks, err := c.ListChunks(category, addr)
 	// log.Printf("chunks=%v", chunks)
 	if err != nil {
 		return fmt.Errorf("listChunks failed: %v", err)

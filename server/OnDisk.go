@@ -85,6 +85,22 @@ func (c *OnDisk) initLastChunkIdx() error {
 	return err
 }
 
+// WriteDirectly writes directly to the chunk files to avoid circular dependancy with replication
+func (s *OnDisk) WriteDirectly(chunk string, contents []byte) error {
+	fl := os.O_CREATE | os.O_WRONLY | os.O_APPEND
+
+	filename := filepath.Join(s.dirname, chunk)
+	fp, err := os.OpenFile(filename, fl, 666)
+	if err != nil {
+		return err
+	}
+
+	defer fp.Close()
+
+	_, err = fp.Write(contents)
+	return err
+}
+
 func (c *OnDisk) Send(ctx context.Context, msg []byte) error {
 	// time.Sleep(time.Millisecond * 100)
 
