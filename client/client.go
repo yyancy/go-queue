@@ -25,8 +25,10 @@ type Client struct {
 }
 
 func NewClient(addrs []string) (*Client, error) {
-	return &Client{addrs: addrs,
-		c: &fasthttp.Client{}}, nil
+	return &Client{
+		addrs: addrs,
+		c: &fasthttp.Client{},
+	}, nil
 }
 
 // ListChunks return the list of chunks for the appropriate
@@ -131,6 +133,7 @@ func (c *Client) updateCurrentChunkCompleteStatus(category, addr string) error {
 	}
 	return nil
 }
+
 func (c *Client) Process(category string, buf []byte, processFn func([]byte) error) error {
 	if buf == nil {
 		buf = make([]byte, defaultBufferSize)

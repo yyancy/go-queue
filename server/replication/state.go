@@ -127,7 +127,7 @@ type WatchResponse clientv3.WatchResponse
 
 func (c *State) ParseReplicationKey(prefix string, kv *storagepb.KeyValue) (Chunk, error) {
 	log.Printf("state's prefix %s, prefix %s, key %s", c.prefix, prefix, string(kv.Key))
-	parts := strings.SplitN(strings.TrimPrefix(string(kv.Key), c.prefix+prefix), "/", 2)
+	parts := strings.SplitN(strings.TrimPrefix(string(kv.Key), prefix), "/", 2)
 	if len(parts) != 2 {
 		return Chunk{}, fmt.Errorf("unexpected key %q, expected two parts after prefix %q",
 			string(kv.Key), prefix)
@@ -141,7 +141,7 @@ func (c *State) ParseReplicationKey(prefix string, kv *storagepb.KeyValue) (Chun
 }
 
 func (c *State) WatchReplicationQueue(ctx context.Context, instanceName string) chan Chunk {
-	prefix := "replication/" + instanceName + "/"
+	prefix := c.prefix + "replication/" + instanceName + "/"
 	resCh := make(chan Chunk)
 
 	go func() {
@@ -163,12 +163,11 @@ func (c *State) WatchReplicationQueue(ctx context.Context, instanceName string) 
 	}()
 
 	go func() {
-		for resp := range c.cl.Watch(ctx, c.prefix+prefix, clientv3.WithPrefix()) {
+		for resp := range c.cl.Watch(ctx, prefix, clientv3.WithPrefix()) {
 			// TODO: hande errors better
 			if err := resp.Err(); err != nil {
 				log.Printf("etcd watch error: %v", err)
 			}
-			log.Printf("prefix: %s", c.prefix+prefix)
 			for _, ev := range resp.Events {
 				if len(ev.Kv.Value) == 0 {
 					continue

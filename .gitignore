@@ -1,1 +1,6 @@
 go.sum
+.vscode/
+
+
+# ignore etcd store
+default.etcd/
