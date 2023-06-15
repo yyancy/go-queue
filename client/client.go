@@ -139,7 +139,7 @@ func (c *Client) Recv(buf []byte) ([]byte, error) {
 
 func (c *Client) ackCurrentChunk(addr string) error {
 	req := fasthttp.AcquireRequest()
-	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s", c.curChunk))
+	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s", c.curChunk.Name))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	err := c.c.Do(req, resp)

@@ -42,7 +42,7 @@ func runTest() error {
 		return fmt.Errorf("compilation failed: %v (out: %s)", err, string(out))
 	}
 	port := 8080
-	dbPath := "E:/yancy/"
+	dbPath := "/tmp/go-queue"
 	// os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
 	log.Printf("Running go-queue on port %d, GOPATH=%s", port, goPath)
