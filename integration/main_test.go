@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -22,18 +21,20 @@ import (
 const (
 	maxN          = 10000000
 	maxBufferSize = 1024 * 1024
+	sendFmt       = "Send: net %13s, cpu %13s (%.1f MiB)"
+	recvFmt       = "Recv: net %13s, cpu %13s"
 )
 
-func TestSimpleClientAndServerConcurently(t *testing.T) {
+func TestClientClientAndServerConcurently(t *testing.T) {
 	t.Parallel()
-	SimpleClientAndServerTest(t, true)
+	ClientClientAndServerTest(t, true)
 }
-func TestSimpleClientAndServerSequentially(t *testing.T) {
+func TestClientClientAndServerSequentially(t *testing.T) {
 	t.Parallel()
-	SimpleClientAndServerTest(t, false)
+	ClientClientAndServerTest(t, false)
 }
 
-func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
+func ClientClientAndServerTest(t *testing.T, concurrent bool) {
 	t.Helper()
 	p, err := freeport.GetFreePort()
 	if err != nil {
@@ -79,7 +80,7 @@ func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 	var want, got int64
 	if concurrent {
 
-		want, got, err = sendAndRecvConcurrently(c)
+		want, got, err = sendAndReceiveConcurrently(c)
 		if err != nil {
 			t.Fatalf("sendAndRecvConcurrently(): %v", err)
 		}
@@ -90,7 +91,7 @@ func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 		}
 		ch := make(chan bool, 1)
 		ch <- true
-		got, err = recv(c, ch)
+		got, err = receive(c, ch)
 		if err != nil {
 			t.Fatalf("recv failed: %v", err)
 		}
@@ -102,30 +103,30 @@ func SimpleClientAndServerTest(t *testing.T, concurrent bool) {
 	}
 }
 
-type SumAndError struct {
+type sumAndErr struct {
 	sum int64
 	err error
 }
 
-func sendAndRecvConcurrently(c *client.Client) (want, got int64, err error) {
-	wantCh := make(chan SumAndError, 1)
-	gotCh := make(chan SumAndError, 1)
-	completeCh := make(chan bool, 1)
-	// produrer
+func sendAndReceiveConcurrently(s *client.Client) (want, got int64, err error) {
+	wantCh := make(chan sumAndErr, 1)
+	gotCh := make(chan sumAndErr, 1)
+	sendFinishedCh := make(chan bool, 1)
+
 	go func() {
-		want, err := send(c)
-		wantCh <- SumAndError{
+		want, err := send(s)
+		log.Printf("Send finished")
+
+		wantCh <- sumAndErr{
 			sum: want,
 			err: err,
 		}
-		// log.Print("already send all data")
-		completeCh <- true
+		sendFinishedCh <- true
 	}()
-	// cumsomer
+
 	go func() {
-		// time.Sleep(1000 * time.Millisecond)
-		got, err := recv(c, completeCh)
-		gotCh <- SumAndError{
+		got, err := receive(s, sendFinishedCh)
+		gotCh <- sumAndErr{
 			sum: got,
 			err: err,
 		}
@@ -135,73 +136,101 @@ func sendAndRecvConcurrently(c *client.Client) (want, got int64, err error) {
 	if wantRes.err != nil {
 		return 0, 0, fmt.Errorf("send: %v", wantRes.err)
 	}
+
 	gotRes := <-gotCh
 	if gotRes.err != nil {
-		return 0, 0, fmt.Errorf("send: %v", gotRes.err)
+		return 0, 0, fmt.Errorf("receive: %v", gotRes.err)
 	}
-	return wantRes.sum, gotRes.sum, nil
+
+	return wantRes.sum, gotRes.sum, err
 }
 
-func send(c *client.Client) (sum int64, err error) {
-	var b bytes.Buffer
+func send(s *client.Client) (sum int64, err error) {
+	sendStart := time.Now()
+	var networkTime time.Duration
+	var sentBytes int
 
-	for i := 0; i < maxN; i++ {
+	defer func() {
+		log.Printf(sendFmt, networkTime, time.Since(sendStart)-networkTime, float64(sentBytes)/1024/1024)
+	}()
+
+	buf := make([]byte, 0, maxBufferSize)
+
+	for i := 0; i <= maxN; i++ {
 		sum += int64(i)
-		fmt.Fprintf(&b, "%d\n", i)
 
-		if b.Len() >= maxBufferSize {
-			if err := c.Send(b.Bytes()); err != nil {
+		buf = strconv.AppendInt(buf, int64(i), 10)
+		buf = append(buf, '\n')
+
+		if len(buf) >= maxBufferSize {
+			start := time.Now()
+			if err := s.Send(buf); err != nil {
 				return 0, err
 			}
-			b.Reset()
+			networkTime += time.Since(start)
+			sentBytes += len(buf)
+
+			buf = buf[0:0]
 		}
 	}
-	// log.Printf("%d", b.Len())
-	if b.Len() > 0 {
-		if err := c.Send(b.Bytes()); err != nil {
+
+	if len(buf) != 0 {
+		start := time.Now()
+		if err := s.Send(buf); err != nil {
 			return 0, err
 		}
+		networkTime += time.Since(start)
+		sentBytes += len(buf)
 	}
-	return sum, nil
 
+	return sum, nil
 }
-func recv(c *client.Client, completeCh chan bool) (sum int64, err error) {
+
+func receive(s *client.Client, sendFinishedCh chan bool) (sum int64, err error) {
 	buf := make([]byte, maxBufferSize)
-	sum = 0
+
+	var parseTime time.Duration
+	receiveStart := time.Now()
+	defer func() {
+		log.Printf(recvFmt, time.Since(receiveStart)-parseTime, parseTime)
+	}()
+
+	trimNL := func(r rune) bool { return r == '\n' }
+
 	sendFinished := false
+
 	for {
 		select {
-		case <-completeCh:
-			// log.Printf("Receive: got information that send finished")
+		case <-sendFinishedCh:
+			log.Printf("Receive: got information that send finished")
 			sendFinished = true
 		default:
 		}
-		res, err := c.Recv(buf)
+
+		res, err := s.Recv(buf)
 		if errors.Is(err, io.EOF) {
-			// log.Printf("EOF happened")
 			if sendFinished {
 				return sum, nil
 			}
-			// time.Sleep(100 * time.Millisecond)
+
+			time.Sleep(time.Millisecond * 10)
 			continue
 		} else if err != nil {
 			return 0, err
 		}
-		// log.Printf("received %s", res)
-		ints := strings.Split(string(res), "\n")
-		for _, ish := range ints {
-			if ish == "" {
-				continue
-			}
-			i, err := strconv.Atoi(ish)
+
+		start := time.Now()
+
+		ints := strings.Split(strings.TrimRightFunc(string(res), trimNL), "\n")
+		for _, str := range ints {
+			i, err := strconv.Atoi(str)
 			if err != nil {
 				return 0, err
 			}
-			// if idx < 2 {
-			// 	log.Printf("recived number=%d", i)
-			// }
+
 			sum += int64(i)
 		}
-	}
 
+		parseTime += time.Since(start)
+	}
 }
