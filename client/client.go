@@ -34,7 +34,7 @@ func (c *Client) listChunks(addr string) ([]protocol.Chunk, error) {
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	err := fasthttp.Do(req, resp)
+	err := c.c.Do(req, resp)
 	// log.Printf("received chunks %v", string(resp.Body()))
 	if err != nil {
 		log.Fatalf("ERR Connection error: %s\n", err)
@@ -59,13 +59,14 @@ func (c *Client) Send(msg []byte) error {
 	req.Header.SetMethod(fasthttp.MethodGet)
 	req.SetBody(msg)
 	resp := fasthttp.AcquireResponse()
-	err := fasthttp.Do(req, resp)
+	defer fasthttp.ReleaseResponse(resp)
+	err := c.c.Do(req, resp)
 	if err != nil {
-		fasthttp.ReleaseResponse(resp)
+		// fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
 	}
 	// log.Printf("Send Response: %s\n", resp.Body())
-	fasthttp.ReleaseResponse(resp)
+	// fasthttp.ReleaseResponse(resp)
 	return nil
 } // //
 
@@ -148,7 +149,7 @@ func (c *Client) receive(buf []byte) ([]byte, error) {
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
 	defer fasthttp.ReleaseResponse(resp)
-	err := fasthttp.Do(req, resp)
+	err := c.c.Do(req, resp)
 
 	if err != nil {
 		log.Fatalf("ERR Connection error: %s\n", err)
@@ -200,14 +201,15 @@ func (c *Client) ackCurrentChunk(addr string) error {
 	req.SetRequestURI(fmt.Sprintf(addr+"/ack?chunk=%s&size=%d", c.curChunk.Name, c.off))
 	req.Header.SetMethod(fasthttp.MethodGet)
 	resp := fasthttp.AcquireResponse()
-	err := fasthttp.Do(req, resp)
+	defer fasthttp.ReleaseResponse(resp)
+	err := c.c.Do(req, resp)
 	fasthttp.ReleaseRequest(req)
 	if resp.StatusCode() != fasthttp.StatusOK {
 		return fmt.Errorf("http code %d, %s", resp.StatusCode(), string(resp.Body()))
 		// return io.EOF
 	}
 	if err != nil {
-		fasthttp.ReleaseResponse(resp)
+		// fasthttp.ReleaseResponse(resp)
 		log.Fatalf("ERR Connection error: %s\n", err)
 	}
 	return nil
