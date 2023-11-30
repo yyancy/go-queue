@@ -14,6 +14,8 @@ func writeHander(ctx *fasthttp.RequestCtx) {
 	ctx.WriteString("Hello, world!")
 }
 
+// InitAndServe checks validity of the suppliied arguments and
+// the web server on the specificed port
 func InitAndServe(dirname string, port uint) error {
 	var storage web.Storage
 	fp, err := os.OpenFile(filepath.Join(dirname, "write_test"), os.O_CREATE|os.O_RDWR, 0666)

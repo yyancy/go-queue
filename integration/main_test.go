@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"net"
 	"os"
@@ -29,6 +28,7 @@ func TestClientClientAndServerConcurently(t *testing.T) {
 	t.Parallel()
 	ClientClientAndServerTest(t, true)
 }
+
 func TestClientClientAndServerSequentially(t *testing.T) {
 	t.Parallel()
 	ClientClientAndServerTest(t, false)
@@ -48,7 +48,7 @@ func ClientClientAndServerTest(t *testing.T, concurrent bool) {
 	os.RemoveAll(dbPath)
 	os.Mkdir(dbPath, 0777)
 
-	ioutil.WriteFile(filepath.Join(dbPath, "chunk1"), []byte("12345\n"), 0666)
+	os.WriteFile(filepath.Join(dbPath, "chunk1"), []byte("12345\n"), 0666)
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -104,8 +104,8 @@ func ClientClientAndServerTest(t *testing.T, concurrent bool) {
 }
 
 type sumAndErr struct {
-	sum int64
 	err error
+	sum int64
 }
 
 func sendAndReceiveConcurrently(s *client.Client) (want, got int64, err error) {

@@ -1,0 +1,6 @@
+## run specifc test
+
+go test -count=1 -race  -run ^TestSimpleClientAndServerConcurently$ github.com/yyancy/go-queue/integration
+
+
+go test -count=1 -race ./...

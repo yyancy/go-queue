@@ -14,20 +14,21 @@ import (
 	"github.com/yyancy/go-queue/protocol"
 )
 
-const defaultBlockSize = 8 * 1024 * 1024
-const maxFileChunkSize = 20 * 1024 * 1024
+const (
+	defaultBlockSize = 8 * 1024 * 1024
+	maxFileChunkSize = 20 * 1024 * 1024
+)
 
 var errSmallBuffer = errors.New("too small buffer")
 
 type OnDisk struct {
-	dirname string
-
-	writeMu       sync.Mutex
+	fps           map[string]*os.File
+	dirname       string
 	lastChunk     string
+	writeMu       sync.Mutex
+	fpsMu         sync.Mutex
 	lastChunkSize uint64
 	lastChunkIdx  uint64
-	fpsMu         sync.Mutex
-	fps           map[string]*os.File
 }
 
 var filenameRegexp = regexp.MustCompile("^chunk([0-9]+)$")
@@ -40,6 +41,7 @@ func NewOnDisk(dirname string) (*OnDisk, error) {
 	}
 	return s, nil
 }
+
 func (c *OnDisk) initLastChunkIdx() error {
 	files, err := os.ReadDir(c.dirname)
 	if err != nil {
@@ -102,7 +104,7 @@ func (c *OnDisk) getFileDecriptor(chunk string, write bool) (*os.File, error) {
 	filename := filepath.Join(c.dirname, chunk)
 	fp, err := os.OpenFile(filename, fl, 0666)
 	if err != nil {
-		return nil, fmt.Errorf("Could not create chunk file %q: %s", filename, err)
+		return nil, fmt.Errorf("could not create chunk file %q: %s", filename, err)
 	}
 
 	_, err = fp.Seek(0, io.SeekEnd)
@@ -168,8 +170,8 @@ func (c *OnDisk) Recv(chunk string, off uint, maxSize uint, w io.Writer) error {
 		curOff += uint(len(truncated))
 
 	}
-
 }
+
 func (c *OnDisk) forgetFileDescriptor(chunk string) {
 	c.fpsMu.Lock()
 	defer c.fpsMu.Unlock()
@@ -181,6 +183,7 @@ func (c *OnDisk) forgetFileDescriptor(chunk string) {
 	fp.Close()
 	delete(c.fps, chunk)
 }
+
 func (c *OnDisk) ListChunks() ([]protocol.Chunk, error) {
 	var res []protocol.Chunk
 
@@ -206,24 +209,29 @@ func (c *OnDisk) ListChunks() ([]protocol.Chunk, error) {
 	// log.Printf("chunks %v", res)
 	return res, nil
 }
+
 func (s *OnDisk) isLastChunk(chunk string) bool {
 	s.writeMu.Lock()
 	defer s.writeMu.Unlock()
 
 	return chunk == s.lastChunk
 }
+
 func (c *OnDisk) Ack(chunk string, size uint64) error {
 	if c.isLastChunk(chunk) {
-		return fmt.Errorf("Could not delete incomplete chunk %q", chunk)
+		return fmt.Errorf("could not delete incomplete chunk %q", chunk)
 	}
 
 	chunkFilename := filepath.Join(c.dirname, chunk)
 
-	_, err := os.Stat(chunkFilename)
+	fi, err := os.Stat(chunkFilename)
 	if err != nil {
 		return fmt.Errorf("stat %q: %w", chunk, err)
 	}
 
+	if uint64(fi.Size()) > size {
+		return fmt.Errorf("file was not fully processed: the supplied processed size %d is smaller than the chunk file size %d", size, fi.Size())
+	}
 	if err := os.Remove(chunkFilename); err != nil {
 		return fmt.Errorf("removing %q: %v", chunk, err)
 	}

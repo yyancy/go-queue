@@ -20,6 +20,7 @@ type Web struct {
 	server Storage
 }
 
+
 type Storage interface {
 	Send(msg []byte) error
 	Recv(chunk string, off uint, maxSize uint, w io.Writer) error

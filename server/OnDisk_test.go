@@ -132,7 +132,7 @@ func TestAckOfTheCompleteChunk(t *testing.T) {
 	srv := testNewOnDisk(t, dir)
 	testCreateFile(t, filepath.Join(dir, "chunk1"))
 
-	if err := srv.Ack("chunk1", 10000); err != nil {
+	if err := srv.Ack("chunk1", 0); err != nil {
 		t.Errorf("Ack(chunk1) = %v, expected no errors", err)
 	}
 }
